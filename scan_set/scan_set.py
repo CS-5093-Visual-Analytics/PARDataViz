@@ -25,9 +25,9 @@ import json
 # }
 
 class ScanSet(object):
-    def __init__(self, scanset_name: str, base_dir: Path):
-        self.name = scanset_name
-        self.base_dir = base_dir
+    def __init__(self, name: str, base_dir: Path | str | None):
+        self.name = name
+        self.base_dir = base_dir.__str__()
         self.scans = []
 
     def get_name(self) -> str:
@@ -37,10 +37,10 @@ class ScanSet(object):
         self.name = name
     
     def get_base_dir(self) -> Path:
-        return self.base_dir
+        return Path(self.base_dir)
     
     def set_base_dir(self, base_dir: Path) -> None:
-        self.base_dir = base_dir
+        self.base_dir = base_dir.__str__()
 
     def get_scans(self) -> list[Scan]:
         return self.scans
@@ -55,19 +55,18 @@ class ScanSet(object):
     def load_scanset(scanset_path: Path):
         with scanset_path.open("r") as scanset_file:
             scanset_json = json.load(scanset_file)
-
-            scanset = ScanSet(**scanset_json)
+            scanset = ScanSet(scanset_json["name"], scanset_json["base_dir"])
 
             for scan_json in scanset_json["scans"]:
-                scan = Scan(**scan_json)
-                scanset.add_scan(scan)
+                scanset.add_scan(Scan(**scan_json))
 
+            # print(scanset.get_scans())
             return scanset
-        
-    # @staticmethod
-    # def dump_scanset(scanset_path: Path):
-    #     with scanset_path.open("w") as scanset_file:
-    #         json.dum
+
+    @staticmethod
+    def dump_scanset(scanset_path: Path, scanset):
+        with scanset_path.open("w") as scanset_file:
+            json.dump(vars(scanset), scanset_file, default=Scan.serialize_scan, indent=4)
 
 def main():
     scanset = ScanSet("Horus-NOAA 2024-May-06 WX Event", Path("D:\\cs5093\\20240506"))
