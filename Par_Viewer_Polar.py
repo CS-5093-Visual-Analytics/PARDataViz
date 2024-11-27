@@ -5,17 +5,25 @@ import scipy.io
 import matplotlib
 import matplotlib.colors as mcolors
 import matplotlib.cm as cm
+from pathlib import Path
 from datetime import datetime
 
 matplotlib.use('QtAgg')
 
-from PySide6.QtWidgets import (QApplication, QMainWindow, QPushButton, QVBoxLayout, 
+from PySide6.QtWidgets import (QApplication, QMainWindow, QPushButton, QVBoxLayout, QDockWidget,
                                QHBoxLayout, QWidget, QFileDialog, QLabel, QListWidget, QToolTip, QSlider)
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QIcon, QAction, QActionGroup
 from PySide6.QtCore import Qt, Signal, QObject, QTimer
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
+
+from ppi_canvas import PPI_Canvas
+from rhi_canvas import RHI_Canvas
+from data_manager import Data_Manager
+from scan_set import ScanSet
+from scanset_builder import ScansetBuilder
+from volume_slice_selector import VolumeSliceSelector
 
 # Reflectivity and Velocity Colormaps
 reflectivity_cmap = mcolors.LinearSegmentedColormap.from_list(
@@ -112,15 +120,15 @@ class Controller(QObject):
     matFileSelected = Signal(str)
 
 
-class MplCanvas(FigureCanvas):
-    def __init__(self, parent=None, width=10, height=8, dpi=100, polar=False):
-        fig = Figure(figsize=(width, height), dpi=dpi)
-        if polar:
-            self.axes = fig.add_subplot(111, polar=True)
-        else:
-            self.axes = fig.add_subplot(111)
-        self.axes.grid(True, linestyle="--", linewidth=0.5, alpha=0.7)
-        super().__init__(fig)
+# class MplCanvas(FigureCanvas):
+#     def __init__(self, parent=None, width=10, height=8, dpi=100, polar=False):
+#         fig = Figure(figsize=(width, height), dpi=dpi)
+#         if polar:
+#             self.axes = fig.add_subplot(111, polar=True)
+#         else:
+#             self.axes = fig.add_subplot(111)
+#         self.axes.grid(True, linestyle="--", linewidth=0.5, alpha=0.7)
+#         super().__init__(fig)
 
 
 class RadarDataUI(QMainWindow):
@@ -128,7 +136,7 @@ class RadarDataUI(QMainWindow):
         super().__init__()
         self.setWindowTitle("PAR Radar Data Viewer")
         self.setGeometry(100, 100, 1600, 900)
-        self.showMaximized()
+        
 
         # Initialize attributes
         self.scan_times = []  
@@ -146,106 +154,156 @@ class RadarDataUI(QMainWindow):
         # Main layout
         main_layout = QHBoxLayout()
         self.controller = Controller()
+        self.data_manager = Data_Manager()
+        
+        # Menu bar and related actions
+        menu_bar = self.menuBar()
+        file_menu = menu_bar.addMenu("File")
+        
+        new_scanset_action = QAction("New scanset...", self, shortcut="Ctrl+N")
+        new_scanset_action.triggered.connect(self.show_scanset_builder)
+        file_menu.addAction(new_scanset_action)
+
+        load_scanset_action = QAction("Load scanset...", self, shortcut="Ctrl+O")
+        load_scanset_action.triggered.connect(self.load_scanset)
+        file_menu.addAction(load_scanset_action)
+
+        exit_action = QAction("Exit", self, shortcut="Ctrl+Q")
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+
+        view_menu = menu_bar.addMenu("View")
+
+        # Sections (e.g. context_menu.addSection()) may be ignored depending on the
+        # platform look and feel, so just add a disabled "action" and separator
+        # to act as a label for a group of actions in the menu.
+        # view_menu.addSection("Toggle Views")
+        self.toggle_views_action = QAction("Toggle Views", self)
+        self.toggle_views_action.setEnabled(False)
+        view_menu.addAction(self.toggle_views_action)
+        view_menu.addSeparator()
+
+        # Status bar
+        self.statusBar()
 
         # Timeline slider
-        self.timeline_slider = QSlider(Qt.Horizontal)
-        self.timeline_slider.setRange(0, 0)  # Initial range with no data
-        self.timeline_slider.setSingleStep(1)
-        self.timeline_slider.setPageStep(1)
-        self.timeline_slider.valueChanged.connect(self.scrub_through_data)
-        self.timeline_slider.setTickPosition(QSlider.TicksBelow)
-        self.timeline_slider.setTickInterval(1)
-        self.timeline_slider.setEnabled(False)  # Disabled until data is loaded
+        # self.timeline_slider = QSlider(Qt.Horizontal)
+        # self.timeline_slider.setRange(0, 0)  # Initial range with no data
+        # self.timeline_slider.setSingleStep(1)
+        # self.timeline_slider.setPageStep(1)
+        # self.timeline_slider.valueChanged.connect(self.scrub_through_data)
+        # self.timeline_slider.setTickPosition(QSlider.TicksBelow)
+        # self.timeline_slider.setTickInterval(1)
+        # self.timeline_slider.setEnabled(False)  # Disabled until data is loaded
 
         # Layouts and widgets for the file selector
-        self.raster_selector_layout = QVBoxLayout()
-        self.raster_selector_layout.setAlignment(Qt.AlignTop)
+        # self.raster_selector_layout = QVBoxLayout()
+        # self.raster_selector_layout.setAlignment(Qt.AlignTop)
 
-        self.scan_folder_list = QListWidget()
-        self.scan_folder_list.itemClicked.connect(self.load_mat_files_in_folder)
-        self.raster_selector_layout.addWidget(self.scan_folder_list)
+        # self.scan_folder_list = QListWidget()
+        # self.scan_folder_list.itemClicked.connect(self.load_mat_files_in_folder)
+        # self.raster_selector_layout.addWidget(self.scan_folder_list)
 
-        self.mat_file_list = QListWidget()
-        self.mat_file_list.itemClicked.connect(self.load_selected_mat_file)
-        self.raster_selector_layout.addWidget(self.mat_file_list)
+        # self.mat_file_list = QListWidget()
+        # self.mat_file_list.itemClicked.connect(self.load_selected_mat_file)
+        # self.raster_selector_layout.addWidget(self.mat_file_list)
 
-        self.load_button = QPushButton("Load Scan(s)")
-        self.load_button.clicked.connect(self.load_scan_folders)
-        self.raster_selector_layout.addWidget(self.load_button)
+        # self.load_button = QPushButton("Load Scan(s)")
+        # self.load_button.clicked.connect(self.load_scan_folders)
+        # self.raster_selector_layout.addWidget(self.load_button)
 
-        # Layout and widgets for visualization
-        self.visualization_layout = QVBoxLayout()
+        # Get wild with docking
+        self.setDockNestingEnabled(True)
 
+        # Scanset Builder
+        self.dockable_ssb = QDockWidget("Scan Set Builder", self)
+        self.dockable_ssb.setFloating(True) # Start as a floating window
+        self.dockable_ssb.hide() # Don't show up at startup
+        view_menu.addAction(self.dockable_ssb.toggleViewAction())
+
+        self.dockable_ssb.setWidget(QLabel("Put Scanset Builder Here"))
+
+        # Volume Slice Selector (separate but dockable dialog)
+        self.dockable_vss = QDockWidget("Volume Slice Selector", self)
+        self.dockable_vss.setFloating(True) # Start as a floating window
+        self.dockable_vss.hide() # Don't show up at startup
+        view_menu.addAction(self.dockable_vss.toggleViewAction())
+
+        self.volume_slice_selector = VolumeSliceSelector()
+        self.volume_slice_selector.update_grid(1, 1, 20, 20, 10)
+        self.dockable_vss.setWidget(self.volume_slice_selector)
+        
         # PPI Canvas
-        self.ppi_canvas = MplCanvas(self, width=10, height=8, dpi=100, polar=True)
-        self.ppi_canvas.axes.set_theta_zero_location("N")
-        self.ppi_label = QLabel("PPI View", self)
-        self.ppi_label.setStyleSheet("font-weight: bold; border: 1px solid black; padding: 5px;")
-        self.visualization_layout.addWidget(self.ppi_label)
-        self.visualization_layout.addWidget(self.ppi_canvas)
-
-        # Buttons for Reflectivity and Velocity
-        self.ppi_button_layout = QHBoxLayout()
-        self.ppi_reflectivity_button = QPushButton("Reflectivity")
-        self.ppi_reflectivity_button.clicked.connect(lambda: self.set_ppi_data_type("reflectivity"))
-        self.ppi_velocity_button = QPushButton("Velocity")
-        self.ppi_velocity_button.clicked.connect(lambda: self.set_ppi_data_type("velocity"))
-        self.ppi_button_layout.addWidget(self.ppi_reflectivity_button)
-        self.ppi_button_layout.addWidget(self.ppi_velocity_button)
-        self.visualization_layout.addLayout(self.ppi_button_layout)
+        self.dockable_ppi = QDockWidget("PPI View", self)
+        self.ppi_canvas = PPI_Canvas(self)
+        self.dockable_ppi.setWidget(self.ppi_canvas)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.dockable_ppi)
+        view_menu.addAction(self.dockable_ppi.toggleViewAction())
 
         # RHI Canvas
-        self.rhi_canvas = MplCanvas(self, width=10, height=8, dpi=100, polar=True)
-        self.rhi_canvas.axes.set_theta_zero_location("E")
-        self.rhi_label = QLabel("RHI View", self)
-        self.rhi_label.setStyleSheet("font-weight: bold; border: 1px solid black; padding: 5px;")
-        self.visualization_layout.addWidget(self.rhi_label)
-        self.visualization_layout.addWidget(self.rhi_canvas)
-
-        # RHI Buttons
-        self.rhi_button_layout = QHBoxLayout()
-        self.rhi_reflectivity_button = QPushButton("Reflectivity")
-        self.rhi_reflectivity_button.clicked.connect(lambda: self.set_rhi_data_type("reflectivity"))
-        self.rhi_velocity_button = QPushButton("Velocity")
-        self.rhi_velocity_button.clicked.connect(lambda: self.set_rhi_data_type("velocity"))
-        self.rhi_button_layout.addWidget(self.rhi_reflectivity_button)
-        self.rhi_button_layout.addWidget(self.rhi_velocity_button)
-        self.visualization_layout.addLayout(self.rhi_button_layout)
+        self.dockable_rhi = QDockWidget("RHI View", self)
+        self.rhi_canvas = RHI_Canvas(self)
+        self.dockable_rhi.setWidget(self.rhi_canvas)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dockable_rhi)
+        view_menu.addAction(self.dockable_rhi.toggleViewAction())
 
         # Timeline controls
-        self.timeline_button_layout = QHBoxLayout()
-        self.back_button = QPushButton()
-        self.back_button.setIcon(QIcon.fromTheme("media-skip-backward"))
-        self.back_button.clicked.connect(self.back)
-        self.timeline_button_layout.addWidget(self.back_button)
+        # self.timeline_button_layout = QHBoxLayout()
+        # self.back_button = QPushButton()
+        # self.back_button.setIcon(QIcon.fromTheme("media-skip-backward"))
+        # self.back_button.clicked.connect(self.back)
+        # self.timeline_button_layout.addWidget(self.back_button)
 
-        self.play_button = QPushButton()
-        self.play_button.setIcon(QIcon.fromTheme("media-playback-start"))
-        self.play_button.clicked.connect(self.toggle_play_pause)
-        self.timeline_button_layout.addWidget(self.play_button)
+        # self.play_button = QPushButton()
+        # self.play_button.setIcon(QIcon.fromTheme("media-playback-start"))
+        # self.play_button.clicked.connect(self.toggle_play_pause)
+        # self.timeline_button_layout.addWidget(self.play_button)
 
-        self.forward_button = QPushButton()
-        self.forward_button.setIcon(QIcon.fromTheme("media-skip-forward"))
-        self.forward_button.clicked.connect(self.forward)
-        self.timeline_button_layout.addWidget(self.forward_button)
+        # self.forward_button = QPushButton()
+        # self.forward_button.setIcon(QIcon.fromTheme("media-skip-forward"))
+        # self.forward_button.clicked.connect(self.forward)
+        # self.timeline_button_layout.addWidget(self.forward_button)
 
         # Add the slider to the timeline layout
-        self.timeline_button_layout.addWidget(self.timeline_slider)
+        # self.timeline_button_layout.addWidget(self.timeline_slider)
 
-        self.visualization_layout.addLayout(self.timeline_button_layout)
-        self.timeline_label = QLabel("Selected Time:")
-        self.visualization_layout.addWidget(self.timeline_label)
+        # self.visualization_layout.addLayout(self.timeline_button_layout)
+        # self.timeline_label = QLabel("Selected Time:")
+        # self.visualization_layout.addWidget(self.timeline_label)
 
         # Set up the layout
-        main_layout.addLayout(self.raster_selector_layout, 1)
-        main_layout.addLayout(self.visualization_layout, 3)
+        # main_layout.addLayout(self.raster_selector_layout, 1)
+        # main_layout.addLayout(self.visualization_layout, 3)
 
-        central_widget = QWidget(self)
-        central_widget.setLayout(main_layout)
-        self.setCentralWidget(central_widget)
+        # central_widget = QWidget(self)
+        # central_widget.setLayout(main_layout)
+        # self.setCentralWidget(central_widget)
 
         # Connect the controller signal
-        self.controller.matFileSelected.connect(self.display_data_from_mat_file) 
+        self.controller.matFileSelected.connect(self.display_data_from_mat_file)
+
+        self.showMaximized()
+        self.statusBar().showMessage("Ready to rock. 🎸")
+        
+
+    def closeEvent(self, event):
+        """Ensure the viewer quits when the main window is closed. This is necessary
+        because a QApplication will continue running as long as at least one
+        top-level widget is still visible. The Volume Slice Selector, for instance,
+        being left open will prevent the application from closing. This behavior
+        is undesireable. The user shouldn't have to close all windows before
+        exiting."""
+        QApplication.instance().quit()
+
+    def show_scanset_builder(self):
+        self.scanset_builder = ScansetBuilder()
+        self.scanset_builder.show()
+
+    def load_scanset(self):
+        (filename, selected_filter) = QFileDialog.getOpenFileName(self, "Load scanset...", os.path.expanduser("~"), "JSON files (*.json)")
+        if filename:
+            self.scanset = ScanSet.load_scanset(Path(filename))
+            self.statusBar().showMessage(f'Loaded scanset "{self.scanset.get_name()}" ✔️')
 
     def set_ppi_data_type(self, data_type):
         self.current_ppi_data_type = data_type
@@ -298,6 +356,7 @@ class RadarDataUI(QMainWindow):
         radar_volume, reflectivity_data, velocity_data = create_radar_volumes_from_mat(file_path)
         self.reflectivity_data = reflectivity_data
         self.velocity_data = velocity_data
+        self.radar_volume = radar_volume
 
         self.update_ppi_view()
         self.update_rhi_view()
@@ -323,7 +382,7 @@ class RadarDataUI(QMainWindow):
 
         # Set up data grid and plot data
         azimuths = np.linspace(-np.pi / 6, np.pi / 6, data.shape[1] + 1)
-        ranges = np.linspace(0, 100, data.shape[0] + 1)
+        ranges = np.linspace(self.radar_volume.start_range_km, 115, data.shape[0] + 1)
         azimuth_grid, range_grid = np.meshgrid(azimuths, ranges)
         ppi_plot = self.ppi_canvas.axes.pcolormesh(azimuth_grid, range_grid, data, cmap=cmap, norm=norm, shading='auto')
 
@@ -339,7 +398,7 @@ class RadarDataUI(QMainWindow):
         self.ppi_canvas.axes.set_title("PPI View - Reflectivity" if self.current_ppi_data_type == "reflectivity" else "PPI View - Velocity")
         self.ppi_canvas.axes.set_thetamin(-30)
         self.ppi_canvas.axes.set_thetamax(30)
-        self.ppi_canvas.axes.set_ylim(0, 100)
+        self.ppi_canvas.axes.set_ylim(self.radar_volume.start_range_km, 115)
         self.ppi_canvas.draw()
 
     def update_rhi_view(self):
@@ -363,7 +422,8 @@ class RadarDataUI(QMainWindow):
 
         # Set up data grid and plot data
         elevations = np.linspace(0, np.pi / 6, data.shape[0] + 1)
-        ranges = np.linspace(0, 100, data.shape[1] + 1)
+        ranges = np.linspace(self.radar_volume.start_range_km, 115, data.shape[1] + 1)
+        # ranges = np.linspace(0, 100, data.shape[1] + 1)
         elevation_grid, range_grid = np.meshgrid(elevations, ranges)
         rhi_plot = self.rhi_canvas.axes.pcolormesh(elevation_grid, range_grid, data.T, cmap=cmap, norm=norm, shading='auto')
 
@@ -379,7 +439,7 @@ class RadarDataUI(QMainWindow):
         self.rhi_canvas.axes.set_title("RHI View - Reflectivity" if self.current_rhi_data_type == "reflectivity" else "RHI View - Velocity")
         self.rhi_canvas.axes.set_thetamin(0)
         self.rhi_canvas.axes.set_thetamax(30)
-        self.rhi_canvas.axes.set_ylim(0, 100)
+        self.rhi_canvas.axes.set_ylim(self.radar_volume.start_range_km, 115)
         self.rhi_canvas.draw()
 
     def back(self):

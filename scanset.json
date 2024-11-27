@@ -1,0 +1,18 @@
+{
+    "scanset_name": "Horus-NOAA 2024-May-06 WX Data",
+    "base_dir": "D:\\cs5093\\20240506",
+    "scans": [
+        {
+            "scan_name": "value",
+            "rel_dir": "relative_path_to_base_dir",
+            "scan_files": [
+                "filename1",
+                "filename2",
+                ...
+            ]
+        },
+        {
+            ...
+        },
+    ]
+ }
