@@ -25,7 +25,7 @@ from scan_set import ScanSet
 from scanset_builder import ScansetBuilder
 from volume_slice_selector import VolumeSliceSelector
 from dynamic_dock_widget import DynamicDockWidget
-import gc
+from timeline_controls import TimelineControls
 
 # Reflectivity and Velocity Colormaps
 reflectivity_cmap = mcolors.LinearSegmentedColormap.from_list(
@@ -137,9 +137,7 @@ class RadarDataUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("PAR Radar Data Viewer")
-        self.setGeometry(100, 100, 1600, 900)
         
-
         # Initialize attributes
         self.scan_times = []  
         self.current_scan_index = 0  
@@ -153,35 +151,34 @@ class RadarDataUI(QMainWindow):
         self.play_timer = QTimer()
         self.play_timer.timeout.connect(self.forward)
 
-        # Main layout
-        main_layout = QHBoxLayout()
+        # TODO: Backing data!!!
         self.controller = Controller()
         self.data_manager = Data_Manager()
         
         # Menu bar and related actions
         menu_bar = self.menuBar()
-        file_menu = menu_bar.addMenu("File")
+        self.file_menu = menu_bar.addMenu("File")
         
         new_scanset_action = QAction("New scanset...", self, shortcut="Ctrl+N")
         new_scanset_action.triggered.connect(self.show_scanset_builder)
-        file_menu.addAction(new_scanset_action)
+        self.file_menu.addAction(new_scanset_action)
 
         load_scanset_action = QAction("Load scanset...", self, shortcut="Ctrl+O")
         load_scanset_action.triggered.connect(self.load_scanset)
-        file_menu.addAction(load_scanset_action)
+        self.file_menu.addAction(load_scanset_action)
 
         exit_action = QAction("Exit", self, shortcut="Ctrl+Q")
         exit_action.triggered.connect(self.close)
-        file_menu.addAction(exit_action)
+        self.file_menu.addAction(exit_action)
 
         self.view_menu = menu_bar.addMenu("View")
         
         new_ppi_view_action = QAction("New PPI View...", self)
-        new_ppi_view_action.triggered.connect(self.create_new_ppi_view)
+        new_ppi_view_action.triggered.connect(lambda: self.create_new_ppi_view(True))
         self.view_menu.addAction(new_ppi_view_action)
 
         new_rhi_view_action = QAction("New RHI View...", self)
-        new_rhi_view_action.triggered.connect(self.create_new_rhi_view)
+        new_rhi_view_action.triggered.connect(lambda: self.create_new_rhi_view(True))
         self.view_menu.addAction(new_rhi_view_action)
 
         # Sections (e.g. context_menu.addSection()) may be ignored depending on the
@@ -194,33 +191,7 @@ class RadarDataUI(QMainWindow):
         self.view_menu.addSeparator()
 
         # Status bar
-        self.statusBar()
-
-        # Timeline slider
-        # self.timeline_slider = QSlider(Qt.Horizontal)
-        # self.timeline_slider.setRange(0, 0)  # Initial range with no data
-        # self.timeline_slider.setSingleStep(1)
-        # self.timeline_slider.setPageStep(1)
-        # self.timeline_slider.valueChanged.connect(self.scrub_through_data)
-        # self.timeline_slider.setTickPosition(QSlider.TicksBelow)
-        # self.timeline_slider.setTickInterval(1)
-        # self.timeline_slider.setEnabled(False)  # Disabled until data is loaded
-
-        # Layouts and widgets for the file selector
-        # self.raster_selector_layout = QVBoxLayout()
-        # self.raster_selector_layout.setAlignment(Qt.AlignTop)
-
-        # self.scan_folder_list = QListWidget()
-        # self.scan_folder_list.itemClicked.connect(self.load_mat_files_in_folder)
-        # self.raster_selector_layout.addWidget(self.scan_folder_list)
-
-        # self.mat_file_list = QListWidget()
-        # self.mat_file_list.itemClicked.connect(self.load_selected_mat_file)
-        # self.raster_selector_layout.addWidget(self.mat_file_list)
-
-        # self.load_button = QPushButton("Load Scan(s)")
-        # self.load_button.clicked.connect(self.load_scan_folders)
-        # self.raster_selector_layout.addWidget(self.load_button)
+        # self.statusBar()
 
         # Get wild with docking
         self.setDockNestingEnabled(True)
@@ -245,6 +216,14 @@ class RadarDataUI(QMainWindow):
         self.volume_slice_selector.update_grid(1, 1, 20, 20, 10)
         self.dockable_vss.setWidget(self.volume_slice_selector)
         
+        # Timeline controls    
+        self.dockable_timec = QDockWidget("Timeline Controls", self)
+        self.dockable_timec.hide()
+        self.timeline_controls = TimelineControls()
+        self.dockable_timec.setWidget(self.timeline_controls)
+        self.view_menu.addAction(self.dockable_timec.toggleViewAction())
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.dockable_timec)
+
         # This is a bit of a hack to create a known position in the menu
         # before which we can insert new dynamic views.
         self.dummy_view_action = QAction("Dummy View Action", self)
@@ -260,66 +239,21 @@ class RadarDataUI(QMainWindow):
         self.ppi_view_count = 0
 
         # Initial PPI Canvas
-        initial_ppi = self.create_new_ppi_view()
+        initial_ppi = self.create_new_ppi_view(False)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, initial_ppi)
 
         # Initial RHI Canvas
-        initial_rhi = self.create_new_rhi_view()
+        initial_rhi = self.create_new_rhi_view(False)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, initial_rhi)
 
-        # 
-        # self.dockable_ppi = QDockWidget("PPI View", self)
-        # self.ppi_canvas = PPI_Canvas(self)
-        # self.dockable_ppi.setWidget(self.ppi_canvas)
-        # self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.dockable_ppi)
-        # self.view_menu.addAction(self.dockable_ppi.toggleViewAction())
-
-        # # RHI Canvas
-        # self.dockable_rhi = QDockWidget("RHI View", self)
-        # self.rhi_canvas = RHI_Canvas(self)
-        # self.dockable_rhi.setWidget(self.rhi_canvas)
-        # self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dockable_rhi)
-        # self.view_menu.addAction(self.dockable_rhi.toggleViewAction())
-
-        # Timeline controls
-        # self.timeline_button_layout = QHBoxLayout()
-        # self.back_button = QPushButton()
-        # self.back_button.setIcon(QIcon.fromTheme("media-skip-backward"))
-        # self.back_button.clicked.connect(self.back)
-        # self.timeline_button_layout.addWidget(self.back_button)
-
-        # self.play_button = QPushButton()
-        # self.play_button.setIcon(QIcon.fromTheme("media-playback-start"))
-        # self.play_button.clicked.connect(self.toggle_play_pause)
-        # self.timeline_button_layout.addWidget(self.play_button)
-
-        # self.forward_button = QPushButton()
-        # self.forward_button.setIcon(QIcon.fromTheme("media-skip-forward"))
-        # self.forward_button.clicked.connect(self.forward)
-        # self.timeline_button_layout.addWidget(self.forward_button)
-
-        # Add the slider to the timeline layout
-        # self.timeline_button_layout.addWidget(self.timeline_slider)
-
-        # self.visualization_layout.addLayout(self.timeline_button_layout)
-        # self.timeline_label = QLabel("Selected Time:")
-        # self.visualization_layout.addWidget(self.timeline_label)
-
-        # Set up the layout
-        # main_layout.addLayout(self.raster_selector_layout, 1)
-        # main_layout.addLayout(self.visualization_layout, 3)
-
-        # central_widget = QWidget(self)
-        # central_widget.setLayout(main_layout)
-        # self.setCentralWidget(central_widget)
-
+        # TODO: BACKING DATA
         # Connect the controller signal
         self.controller.matFileSelected.connect(self.display_data_from_mat_file)
 
-        self.showMaximized()
-        self.statusBar().showMessage("Ready to rock. 🎸")
+        self.ready_status = 'Ready to rock. 🎸'
+        self.show()
+        self.statusBar().showMessage(self.ready_status, timeout=0)
         
-
     def closeEvent(self, event):
         """Ensure the viewer quits when the main window is closed. This is necessary
         because a QApplication will continue running as long as at least one
@@ -327,12 +261,14 @@ class RadarDataUI(QMainWindow):
         user shouldn't have to close all windows before exiting."""
         QApplication.instance().quit()
 
-    def create_new_ppi_view(self):
+    def create_new_ppi_view(self, floating):
         self.ppi_view_count = self.ppi_view_count + 1
         view_title = f'PPI View {self.ppi_view_count}'
         dock_widget = DynamicDockWidget(view_title, self, plot_type='PPI')
-        dock_widget.setFloating(True) # Start as a floating window
-        dock_widget.show()
+        
+        if floating:
+            dock_widget.setFloating(floating) # Start as a floating window
+            dock_widget.show()
 
         ppi_canvas = PPI_Canvas(dock_widget)
         # TODO: Hook up signals and slots for a new PPI view
@@ -356,18 +292,17 @@ class RadarDataUI(QMainWindow):
             action = self.ppi_view_actions.pop(dock_widget)
             self.view_menu.removeAction(action)
 
-
-    def create_new_rhi_view(self):
+    def create_new_rhi_view(self, floating):
         self.rhi_view_count = self.rhi_view_count + 1
         view_title = f'RHI View {self.rhi_view_count}'
         dock_widget = DynamicDockWidget(view_title, self, plot_type='RHI')
-        dock_widget.setFloating(True) # Start as a floating window
-        dock_widget.show()
+
+        if floating:
+            dock_widget.setFloating(floating) # Start as a floating window
+            dock_widget.show()
         
         rhi_canvas = RHI_Canvas(dock_widget)
-        
         # TODO: Hook up signals and slots for a new RHI view
-        
         dock_widget.setWidget(rhi_canvas)
         
         toggle_view_action = dock_widget.toggleViewAction()
