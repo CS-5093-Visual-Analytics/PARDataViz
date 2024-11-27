@@ -10,7 +10,7 @@ from datetime import datetime
 
 matplotlib.use('QtAgg')
 
-from PySide6.QtWidgets import (QApplication, QMainWindow, QPushButton, QVBoxLayout, QDockWidget,
+from PySide6.QtWidgets import (QApplication, QMainWindow, QPushButton, QVBoxLayout, QDockWidget, QSizeGrip,
                                QHBoxLayout, QWidget, QFileDialog, QLabel, QListWidget, QToolTip, QSlider)
 from PySide6.QtGui import QIcon, QAction, QActionGroup
 from PySide6.QtCore import Qt, Signal, QObject, QTimer
@@ -24,6 +24,8 @@ from data_manager import Data_Manager
 from scan_set import ScanSet
 from scanset_builder import ScansetBuilder
 from volume_slice_selector import VolumeSliceSelector
+from dynamic_dock_widget import DynamicDockWidget
+import gc
 
 # Reflectivity and Velocity Colormaps
 reflectivity_cmap = mcolors.LinearSegmentedColormap.from_list(
@@ -172,7 +174,15 @@ class RadarDataUI(QMainWindow):
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
-        view_menu = menu_bar.addMenu("View")
+        self.view_menu = menu_bar.addMenu("View")
+        
+        new_ppi_view_action = QAction("New PPI View...", self)
+        new_ppi_view_action.triggered.connect(self.create_new_ppi_view)
+        self.view_menu.addAction(new_ppi_view_action)
+
+        new_rhi_view_action = QAction("New RHI View...", self)
+        new_rhi_view_action.triggered.connect(self.create_new_rhi_view)
+        self.view_menu.addAction(new_rhi_view_action)
 
         # Sections (e.g. context_menu.addSection()) may be ignored depending on the
         # platform look and feel, so just add a disabled "action" and separator
@@ -180,8 +190,8 @@ class RadarDataUI(QMainWindow):
         # view_menu.addSection("Toggle Views")
         self.toggle_views_action = QAction("Toggle Views", self)
         self.toggle_views_action.setEnabled(False)
-        view_menu.addAction(self.toggle_views_action)
-        view_menu.addSeparator()
+        self.view_menu.addAction(self.toggle_views_action)
+        self.view_menu.addSeparator()
 
         # Status bar
         self.statusBar()
@@ -217,35 +227,59 @@ class RadarDataUI(QMainWindow):
 
         # Scanset Builder
         self.dockable_ssb = QDockWidget("Scan Set Builder", self)
-        self.dockable_ssb.setFloating(True) # Start as a floating window
-        self.dockable_ssb.hide() # Don't show up at startup
-        view_menu.addAction(self.dockable_ssb.toggleViewAction())
+        # self.dockable_ssb.setFloating(True) # Start as a floating window
+        # self.dockable_ssb.hide() # Don't show up at startup
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.dockable_ssb)
+        self.view_menu.addAction(self.dockable_ssb.toggleViewAction())
 
-        self.dockable_ssb.setWidget(QLabel("Put Scanset Builder Here"))
+        self.scanset_builder = ScansetBuilder()
+        self.dockable_ssb.setWidget(self.scanset_builder)
 
         # Volume Slice Selector (separate but dockable dialog)
         self.dockable_vss = QDockWidget("Volume Slice Selector", self)
         self.dockable_vss.setFloating(True) # Start as a floating window
         self.dockable_vss.hide() # Don't show up at startup
-        view_menu.addAction(self.dockable_vss.toggleViewAction())
+        self.view_menu.addAction(self.dockable_vss.toggleViewAction())
 
         self.volume_slice_selector = VolumeSliceSelector()
         self.volume_slice_selector.update_grid(1, 1, 20, 20, 10)
         self.dockable_vss.setWidget(self.volume_slice_selector)
         
-        # PPI Canvas
-        self.dockable_ppi = QDockWidget("PPI View", self)
-        self.ppi_canvas = PPI_Canvas(self)
-        self.dockable_ppi.setWidget(self.ppi_canvas)
-        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.dockable_ppi)
-        view_menu.addAction(self.dockable_ppi.toggleViewAction())
+        # This is a bit of a hack to create a known position in the menu
+        # before which we can insert new dynamic views.
+        self.dummy_view_action = QAction("Dummy View Action", self)
+        self.dummy_view_action.setEnabled(False)
+        self.dummy_view_action.setVisible(False)
+        self.view_menu.addAction(self.dummy_view_action)
+        
+        self.rhi_views = []
+        self.rhi_view_actions = {}
+        self.rhi_view_count = 0
+        self.ppi_views = []
+        self.ppi_view_actions = {}
+        self.ppi_view_count = 0
 
-        # RHI Canvas
-        self.dockable_rhi = QDockWidget("RHI View", self)
-        self.rhi_canvas = RHI_Canvas(self)
-        self.dockable_rhi.setWidget(self.rhi_canvas)
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dockable_rhi)
-        view_menu.addAction(self.dockable_rhi.toggleViewAction())
+        # Initial PPI Canvas
+        initial_ppi = self.create_new_ppi_view()
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, initial_ppi)
+
+        # Initial RHI Canvas
+        initial_rhi = self.create_new_rhi_view()
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, initial_rhi)
+
+        # 
+        # self.dockable_ppi = QDockWidget("PPI View", self)
+        # self.ppi_canvas = PPI_Canvas(self)
+        # self.dockable_ppi.setWidget(self.ppi_canvas)
+        # self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.dockable_ppi)
+        # self.view_menu.addAction(self.dockable_ppi.toggleViewAction())
+
+        # # RHI Canvas
+        # self.dockable_rhi = QDockWidget("RHI View", self)
+        # self.rhi_canvas = RHI_Canvas(self)
+        # self.dockable_rhi.setWidget(self.rhi_canvas)
+        # self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dockable_rhi)
+        # self.view_menu.addAction(self.dockable_rhi.toggleViewAction())
 
         # Timeline controls
         # self.timeline_button_layout = QHBoxLayout()
@@ -289,21 +323,84 @@ class RadarDataUI(QMainWindow):
     def closeEvent(self, event):
         """Ensure the viewer quits when the main window is closed. This is necessary
         because a QApplication will continue running as long as at least one
-        top-level widget is still visible. The Volume Slice Selector, for instance,
-        being left open will prevent the application from closing. This behavior
-        is undesireable. The user shouldn't have to close all windows before
-        exiting."""
+        top-level widget is still visible. This behavior is undesireable. The 
+        user shouldn't have to close all windows before exiting."""
         QApplication.instance().quit()
 
+    def create_new_ppi_view(self):
+        self.ppi_view_count = self.ppi_view_count + 1
+        view_title = f'PPI View {self.ppi_view_count}'
+        dock_widget = DynamicDockWidget(view_title, self, plot_type='PPI')
+        dock_widget.setFloating(True) # Start as a floating window
+        dock_widget.show()
+
+        ppi_canvas = PPI_Canvas(dock_widget)
+        # TODO: Hook up signals and slots for a new PPI view
+        dock_widget.setWidget(ppi_canvas)
+
+        toggle_view_action = dock_widget.toggleViewAction()
+        # toggle_view_action.setChecked(True)
+        self.view_menu.insertAction(self.dummy_view_action, toggle_view_action)
+        # Add an entry in the widget -> action mapping
+        self.ppi_view_actions[dock_widget] = toggle_view_action
+
+        self.ppi_views.append(dock_widget)
+        return dock_widget
+
+    def remove_ppi_view(self, dock_widget):
+        if dock_widget in self.ppi_views:
+            self.ppi_views.remove(dock_widget)
+
+        # Use the mapping between widget -> action to easily remove the view action
+        if dock_widget in self.ppi_view_actions:
+            action = self.ppi_view_actions.pop(dock_widget)
+            self.view_menu.removeAction(action)
+
+
+    def create_new_rhi_view(self):
+        self.rhi_view_count = self.rhi_view_count + 1
+        view_title = f'RHI View {self.rhi_view_count}'
+        dock_widget = DynamicDockWidget(view_title, self, plot_type='RHI')
+        dock_widget.setFloating(True) # Start as a floating window
+        dock_widget.show()
+        
+        rhi_canvas = RHI_Canvas(dock_widget)
+        
+        # TODO: Hook up signals and slots for a new RHI view
+        
+        dock_widget.setWidget(rhi_canvas)
+        
+        toggle_view_action = dock_widget.toggleViewAction()
+        # toggle_view_action.setChecked(True)
+        self.view_menu.insertAction(self.dummy_view_action, toggle_view_action)
+        # Add an entry in the widget -> action mapping
+        self.rhi_view_actions[dock_widget] = toggle_view_action
+
+        self.rhi_views.append(dock_widget)
+        return dock_widget
+
+    def remove_rhi_view(self, dock_widget):
+        if dock_widget in self.rhi_views:
+            self.rhi_views.remove(dock_widget)
+
+        # Use the mapping between widget -> action to easily remove the view action
+        if dock_widget in self.rhi_view_actions:
+            action = self.rhi_view_actions.pop(dock_widget)
+            self.view_menu.removeAction(action)
+        
     def show_scanset_builder(self):
-        self.scanset_builder = ScansetBuilder()
-        self.scanset_builder.show()
+        self.dockable_ssb.setVisible(True)
+        self.scanset_builder.new_scanset()
 
     def load_scanset(self):
         (filename, selected_filter) = QFileDialog.getOpenFileName(self, "Load scanset...", os.path.expanduser("~"), "JSON files (*.json)")
         if filename:
             self.scanset = ScanSet.load_scanset(Path(filename))
             self.statusBar().showMessage(f'Loaded scanset "{self.scanset.get_name()}" ✔️')
+
+# OLD STUFF
+
+
 
     def set_ppi_data_type(self, data_type):
         self.current_ppi_data_type = data_type
@@ -582,4 +679,18 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = RadarDataUI()
     window.show()
+
+    # # Force garbage collection periodically to test
+    # def force_gc():
+    #     print("\nForcing garbage collection...")
+    #     gc.collect()
+    #     for obj in gc.garbage:
+    #         print(f"Uncollectable: {obj}")
+
+    # # Create a timer to periodically force garbage collection
+    # from PySide6.QtCore import QTimer
+    # gc_timer = QTimer()
+    # gc_timer.timeout.connect(force_gc)
+    # gc_timer.start(5000)  # Run every 5 seconds
+
     sys.exit(app.exec())

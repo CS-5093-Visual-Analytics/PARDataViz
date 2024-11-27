@@ -8,3 +8,4 @@ class RHI_Canvas(BaseCanvas):
     
     def get_view_name(self):
         return "RHI"
+    

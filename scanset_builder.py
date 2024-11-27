@@ -3,17 +3,17 @@ import os
 from pathlib import Path
 from PySide6.QtWidgets import QApplication, QMainWindow, QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QFileDialog, QListWidget, QListWidgetItem, QFrame, QStatusBar
 from PySide6.QtGui import QValidator
+from PySide6.QtCore import Slot
 from scan_set import ScanSet
 from scan import Scan
 
-class ScansetBuilder(QDialog):
+class ScansetBuilder(QWidget):
     """
     """
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Scanset Builder")
-        self.setSizeGripEnabled(True)
+        # self.setSizeGripEnabled(True)
         
         self.last_selected_base_dir = os.path.expanduser("~")
 
@@ -237,6 +237,9 @@ class ScansetBuilder(QDialog):
             self.selected_scan_add_files_button.setEnabled(False)
             self.selected_scan_remove_files_button.setEnabled(False)
 
+    @Slot()
+    def new_scanset(self):
+        print("TODO Clear scanset builder for new scanset")
 
 class StandaloneScansetBuilder(QMainWindow):
     def __init__(self):
