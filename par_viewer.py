@@ -14,7 +14,7 @@ matplotlib.use('QtAgg')
 from PySide6.QtWidgets import (QApplication, QMainWindow, QPushButton, QVBoxLayout, QDockWidget, QSizeGrip,
                                QHBoxLayout, QWidget, QFileDialog, QLabel, QListWidget, QToolTip, QSlider)
 from PySide6.QtGui import QIcon, QAction, QActionGroup
-from PySide6.QtCore import Qt, Signal, QObject, QTimer
+from PySide6.QtCore import Qt, Signal, Slot, QObject, QTimer
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -120,18 +120,7 @@ def create_radar_volumes_from_mat(file_path):
 
 
 class Controller(QObject):
-    matFileSelected = Signal(str)
-
-
-# class MplCanvas(FigureCanvas):
-#     def __init__(self, parent=None, width=10, height=8, dpi=100, polar=False):
-#         fig = Figure(figsize=(width, height), dpi=dpi)
-#         if polar:
-#             self.axes = fig.add_subplot(111, polar=True)
-#         else:
-#             self.axes = fig.add_subplot(111)
-#         self.axes.grid(True, linestyle="--", linewidth=0.5, alpha=0.7)
-#         super().__init__(fig)
+    mat_file_selected = Signal(str)
 
 
 class RadarDataUI(QMainWindow):
@@ -161,7 +150,7 @@ class RadarDataUI(QMainWindow):
         self.file_menu = menu_bar.addMenu("File")
         
         new_scanset_action = QAction("New scanset...", self, shortcut="Ctrl+N")
-        new_scanset_action.triggered.connect(self.show_scanset_builder)
+        new_scanset_action.triggered.connect(self.new_scanset)
         self.file_menu.addAction(new_scanset_action)
 
         load_scanset_action = QAction("Load scanset...", self, shortcut="Ctrl+O")
@@ -205,6 +194,8 @@ class RadarDataUI(QMainWindow):
         self.view_menu.addAction(self.dockable_ssb.toggleViewAction())
 
         self.scanset_builder = ScansetBuilder()
+        self.scanset_builder.status_updated.connect(self.on_status_updated)
+        self.scanset_builder.scanset_loaded.connect(self.data_manager.on_scanset_load)
         self.dockable_ssb.setWidget(self.scanset_builder)
 
         # Volume Slice Selector (separate but dockable dialog)
@@ -214,7 +205,7 @@ class RadarDataUI(QMainWindow):
         self.view_menu.addAction(self.dockable_vss.toggleViewAction())
 
         self.volume_slice_selector = VolumeSliceSelector()
-        self.volume_slice_selector.update_grid(1, 1, 20, 20, 10)
+        self.volume_slice_selector.on_grid_updated(1, 1, 20, 20, 10)
         self.dockable_vss.setWidget(self.volume_slice_selector)
         
         # Timeline controls    
@@ -249,7 +240,7 @@ class RadarDataUI(QMainWindow):
 
         # TODO: BACKING DATA
         # Connect the controller signal
-        self.controller.matFileSelected.connect(self.display_data_from_mat_file)
+        self.controller.mat_file_selected.connect(self.display_data_from_mat_file)
 
         self.happy_messages = ['Jolly good.', 'Happy hunting.', 'Best of luck.', 'I\'m rooting for you.']
         self.ready_status_widget = QLabel('Ready to rock. 🎸 v0.1')
@@ -332,15 +323,21 @@ class RadarDataUI(QMainWindow):
 
         self.statusBar().showMessage('Dynamic RHI view closed.')
         
-    def show_scanset_builder(self):
+    def new_scanset(self):
         self.dockable_ssb.setVisible(True)
-        self.scanset_builder.new_scanset()
+        self.scanset = ScanSet("New scanset", base_dir=Path(os.path.expanduser("~")))
+        self.scanset_builder.on_scanset_loaded(self.scanset)
 
     def load_scanset(self):
         (filename, selected_filter) = QFileDialog.getOpenFileName(self, "Load scanset...", os.path.expanduser("~"), "JSON files (*.json)")
         if filename:
             self.scanset = ScanSet.load_scanset(Path(filename))
+            self.scanset_builder.on_scanset_loaded(self.scanset)
             self.statusBar().showMessage(f'Loaded scanset "{self.scanset.get_name()}" ✔️')
+
+    @Slot(str)
+    def on_status_updated(self, status: str):
+        self.statusBar().showMessage(status)
 
 # OLD STUFF
 
@@ -391,7 +388,7 @@ class RadarDataUI(QMainWindow):
         if folder_item:
             folder_name = folder_item.text()
             full_path = os.path.join(self.base_folder_path, folder_name, 'MATLAB', item.text())
-            self.controller.matFileSelected.emit(full_path)
+            self.controller.mat_file_selected.emit(full_path)
 
     def display_data_from_mat_file(self, file_path):
         radar_volume, reflectivity_data, velocity_data = create_radar_volumes_from_mat(file_path)
@@ -518,7 +515,7 @@ class RadarDataUI(QMainWindow):
         timestamp_str, file_path = self.scan_times[self.current_scan_index]
         formatted_time = self.format_timestamp(timestamp_str)
         self.timeline_label.setText(f"Selected Time: {formatted_time}")
-        self.controller.matFileSelected.emit(file_path)
+        self.controller.mat_file_selected.emit(file_path)
 
     def extract_timestamp_from_filename(self, filename):
         try:

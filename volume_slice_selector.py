@@ -11,7 +11,7 @@ class CircleItem(QObject, QGraphicsEllipseItem):
     index "j" of each glyph represents the selected RHI slice (a planar vertical
     slice at the given azimuth angle).
     """
-    hover_signal = Signal(int, int)
+    mouse_hovered = Signal(int, int)
 
     def __init__(self, i, j, x, y, radius, *args, **kwargs):
         QObject.__init__(self)
@@ -28,10 +28,10 @@ class CircleItem(QObject, QGraphicsEllipseItem):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            self.scene().circle_selected(self.i, self.j)
+            self.scene().on_circle_selected(self.i, self.j)
 
     def hoverEnterEvent(self, event):
-        self.hover_signal.emit(self.i, self.j)
+        self.mouse_hovered.emit(self.i, self.j)
         super().hoverEnterEvent(event)
 
     def hoverLeaveEvent(self, event):
@@ -92,7 +92,7 @@ class CircleScene(QGraphicsScene):
             circle.set_highlighted(False)
 
     @Slot(int, int)
-    def circle_selected(self, i, j):
+    def on_circle_selected(self, i, j):
         """Slot to handle circle selection."""
         for circle in self.circles:
             if circle.i == i or circle.j == j:
@@ -137,7 +137,7 @@ class VolumeSliceSelector(QWidget):
         self.radius = 20
 
     @Slot(int, int, int, int)
-    def update_grid(self, rows, cols, x_spacing, y_spacing, radius):
+    def on_grid_updated(self, rows, cols, x_spacing, y_spacing, radius):
         """Dynamically update the grid with new parameters."""
         self.rows = rows
         self.cols = cols
@@ -156,13 +156,13 @@ class VolumeSliceSelector(QWidget):
                 x = j * x_spacing
                 y = i * y_spacing
                 circle = CircleItem(i, j, x, y, radius)
-                circle.hover_signal.connect(self.scene.highlight_row_and_column)
+                circle.mouse_hovered.connect(self.scene.highlight_row_and_column)
                 self.scene.addItem(circle)
 
     @Slot(int, int)
-    def set_selection(self, i, j):
+    def on_selection(self, i, j):
         """Slot to programmatically select a slice."""
-        self.scene.circle_selected(i, j)
+        self.scene.on_circle_selected(i, j)
 
 if __name__ == "__main__":
     import sys
@@ -175,10 +175,10 @@ if __name__ == "__main__":
     widget.selection_changed.connect(on_selection_changed)
 
     # Update the grid
-    widget.update_grid(20, 44, 20, 20, 10)
+    widget.on_grid_updated(20, 44, 20, 20, 10)
 
     # Programmatically select a circle
-    widget.set_selection(19, (44 // 2) - 1)
+    widget.on_selection(19, (44 // 2) - 1)
 
     widget.show()
     sys.exit(app.exec())

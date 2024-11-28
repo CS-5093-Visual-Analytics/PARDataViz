@@ -2,10 +2,10 @@ from pathlib import Path
 
 class Scan(object):
     # def __init__(self, scan_name: str, rel_dir: Path) -> None:
-    def __init__(self, name: str, scan_files: list[str] = []) -> None:
+    def __init__(self, name: str, scan_files: list[str] = None) -> None:
         self.name = name
         # self.rel_dir = rel_dir
-        self.scan_files = scan_files
+        self.scan_files = scan_files if scan_files is not None else []
     
     def get_name(self) -> str:
         return self.name
