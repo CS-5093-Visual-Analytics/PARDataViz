@@ -2,6 +2,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 from PySide6.QtWidgets import QMenu
 from PySide6.QtGui import QAction, QActionGroup
+from radar_volume import RadarVolume
 
 class BaseCanvas(FigureCanvasQTAgg):
     """
@@ -57,5 +58,8 @@ class BaseCanvas(FigureCanvasQTAgg):
         self.current_data_type = product
         self.update_view()
 
-    def update_view(self):
+    def get_product_display(self):
+        return self.current_data_type
+
+    def update_view(self, radar_volume: RadarVolume):
         print(f"{self.get_view_name()} view product changed: {self.current_data_type}")

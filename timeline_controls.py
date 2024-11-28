@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import QApplication, QWidget, QSlider, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QSpacerItem, QSizePolicy
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt, QSize, Slot
 from PySide6.QtGui import QIcon
 
 class TimelineControls(QWidget):
@@ -30,12 +30,12 @@ class TimelineControls(QWidget):
         self.timeline_button_layout.addSpacerItem(QSpacerItem(20, 0, QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Minimum))
 
         # Timeline slider
-        self.timeline_slider = QSlider(Qt.Horizontal)
+        self.timeline_slider = QSlider(Qt.Orientation.Horizontal)
         self.timeline_slider.setRange(0, 100)  # Initial range for testing
         self.timeline_slider.setSingleStep(1)
         self.timeline_slider.setPageStep(1)
-        # self.timeline_slider.valueChanged.connect(self.scrub_through_data)
-        self.timeline_slider.setTickPosition(QSlider.TicksBelow)
+        self.timeline_slider.valueChanged.connect(self.scrub_through_data)
+        self.timeline_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
         self.timeline_slider.setTickInterval(1)
         self.timeline_slider.setTracking(False) # Don't emit an updated value until the user stops dragging the slider.
         # self.timeline_slider.setEnabled(False)  # Disabled until data is loaded
@@ -50,6 +50,42 @@ class TimelineControls(QWidget):
     
     def slider_updated(self, int):
         print(f"Slider value {int}")
+    
+    @Slot(int)
+    def on_scan_times_changed(self, num_times: int):
+        self.timeline_slider.setValue(0)
+        self.scan_times = num_times
+        self.timeline_slider.setRange(0, num_times - 1)
+
+    def scrub_through_data(self, value):
+        if not self.scan_times:
+            return
+
+        # Update current scan index and trigger data update
+        self.current_scan_index = value
+        self.update_scan_from_index()
+
+    def back(self):
+        if not self.scan_times:
+            return
+        self.current_scan_index = (self.current_scan_index - 1) % len(self.scan_times)
+        self.update_scan_from_index()
+
+    def forward(self):
+        if not self.scan_times:
+            return
+        self.current_scan_index = (self.current_scan_index + 1) % len(self.scan_times)
+        self.update_scan_from_index()
+
+    def toggle_play_pause(self):
+        if not self.scan_times:
+            return
+        if self.play_timer.isActive():
+            self.play_timer.stop()
+            self.play_button.setIcon(QIcon.fromTheme("media-playback-start")) 
+        else:
+            self.play_timer.start(1000)  # Start timer with 1-second intervals
+            self.play_button.setIcon(QIcon.fromTheme("media-playback-pause"))  
 
 def main():
     """Test the TimelineControls widget."""
