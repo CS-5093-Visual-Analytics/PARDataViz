@@ -14,22 +14,16 @@ class TimelineControls(QWidget):
         # Timeline controls
         self.back_button = QPushButton()
         self.back_button.setIcon(QIcon.fromTheme("media-skip-backward"))
-        # self.back_button.setIconSize(QSize(32, 32))
-        # self.back_button.setFixedSize(48, 48)
         # self.back_button.clicked.connect(self.back)
         self.timeline_button_layout.addWidget(self.back_button)
 
         self.play_button = QPushButton()
         self.play_button.setIcon(QIcon.fromTheme("media-playback-start"))
-        # self.play_button.setIconSize(QSize(32, 32))
-        # self.play_button.setFixedSize(48, 48)
         # self.play_button.clicked.connect(self.toggle_play_pause)
         self.timeline_button_layout.addWidget(self.play_button)
 
         self.forward_button = QPushButton()
         self.forward_button.setIcon(QIcon.fromTheme("media-skip-forward"))
-        # self.forward_button.setIconSize(QSize(32, 32))
-        # self.forward_button.setFixedSize(48, 48)
         # self.forward_button.clicked.connect(self.forward)
         self.timeline_button_layout.addWidget(self.forward_button)
 

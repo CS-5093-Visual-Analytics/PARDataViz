@@ -1,5 +1,6 @@
 import os
 import sys
+import random
 import numpy as np
 import scipy.io
 import matplotlib
@@ -250,9 +251,11 @@ class RadarDataUI(QMainWindow):
         # Connect the controller signal
         self.controller.matFileSelected.connect(self.display_data_from_mat_file)
 
-        self.ready_status = 'Ready to rock. 🎸'
+        self.happy_messages = ['Jolly good.', 'Happy hunting.', 'Best of luck.', 'I\'m rooting for you.']
+        self.ready_status_widget = QLabel('Ready to rock. 🎸 v0.1')
         self.show()
-        self.statusBar().showMessage(self.ready_status, timeout=0)
+        self.statusBar().addPermanentWidget(self.ready_status_widget)
+        self.statusBar().showMessage(f'PAR Data Visualizer initialized! {random.choice(self.happy_messages)}')
         
     def closeEvent(self, event):
         """Ensure the viewer quits when the main window is closed. This is necessary
@@ -281,6 +284,7 @@ class RadarDataUI(QMainWindow):
         self.ppi_view_actions[dock_widget] = toggle_view_action
 
         self.ppi_views.append(dock_widget)
+        self.statusBar().showMessage('Dynamic PPI view created.')
         return dock_widget
 
     def remove_ppi_view(self, dock_widget):
@@ -291,6 +295,8 @@ class RadarDataUI(QMainWindow):
         if dock_widget in self.ppi_view_actions:
             action = self.ppi_view_actions.pop(dock_widget)
             self.view_menu.removeAction(action)
+        
+        self.statusBar().showMessage('Dynamic PPI view closed.')
 
     def create_new_rhi_view(self, floating):
         self.rhi_view_count = self.rhi_view_count + 1
@@ -312,6 +318,7 @@ class RadarDataUI(QMainWindow):
         self.rhi_view_actions[dock_widget] = toggle_view_action
 
         self.rhi_views.append(dock_widget)
+        self.statusBar().showMessage('Dynamic RHI view created.')
         return dock_widget
 
     def remove_rhi_view(self, dock_widget):
@@ -322,6 +329,8 @@ class RadarDataUI(QMainWindow):
         if dock_widget in self.rhi_view_actions:
             action = self.rhi_view_actions.pop(dock_widget)
             self.view_menu.removeAction(action)
+
+        self.statusBar().showMessage('Dynamic RHI view closed.')
         
     def show_scanset_builder(self):
         self.dockable_ssb.setVisible(True)
