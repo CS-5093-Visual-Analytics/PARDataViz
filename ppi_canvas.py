@@ -1,3 +1,4 @@
+from PySide6.QtWidgets import QToolTip
 from PySide6.QtCore import Slot
 from base_canvas import BaseCanvas
 from color_maps import ColorMaps

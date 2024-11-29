@@ -4,12 +4,7 @@ from PySide6.QtCore import Qt
 class DynamicDockWidget(QDockWidget):
     """A dockable widget which removes itself from its parent's list of widgets."""
     def __init__(self, title, parent=None, plot_type='PPI'):
-        # We have to be very careful with references here and not pass a parent
-        # to the super-class. Otherwise, this object will have a lifetime of 
-        # the entire QApplication. We want these "dynamic" objects to get
-        # garbage collected after they are closed.
         super().__init__(title, parent)
-        # self.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
         self.parent = parent
         self.plot_type = plot_type
 

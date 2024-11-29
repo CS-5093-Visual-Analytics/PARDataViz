@@ -56,7 +56,7 @@ class BaseCanvas(FigureCanvasQTAgg):
     
     def set_product_display(self, product):
         self.current_data_type = product
-        self.update_view()
+        # self.update_view()
 
     def get_product_display(self):
         return self.current_data_type
