@@ -9,9 +9,11 @@ Integrate the scansets into the tool. ✔️
 
 Dynamically add/remove PPI and RHI views. ✔️
 
+Make a cleanup and documentation pass on everything.
+
 Switching products. Back when we were using matplotlib, it was nice to have a right-click context menu. In VisPy that seems a lot more difficult. I hate to put it buried in the menubar. Need to figure this out.
 
-Hook up the volume_slice_selector to the plots.
+Hook up the volume_slice_selector to the plots. Partially complete!
 
 Every time a new volume is loaded, the selected indexes in the volume slice seletor are cleared. This is probably because I recreate it every time the volume changes.
 

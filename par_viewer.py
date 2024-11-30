@@ -24,7 +24,7 @@ class PARDataVisualizer(QMainWindow):
         self.setGeometry(0, 0, 1600, 900)
 
         # Volume data manager
-        self.data_manager = Data_Manager(num_files_to_load=30)
+        self.data_manager = Data_Manager(num_files_to_load=10)
         self.data_manager.num_volumes_changed.connect(self.on_num_volumes_changed)
         # self.data_manager.volume_loaded.connect(self.on_volume_loaded)
 
