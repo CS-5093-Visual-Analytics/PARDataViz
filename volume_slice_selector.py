@@ -1,6 +1,7 @@
 from PySide6.QtWidgets import QApplication, QWidget, QGraphicsView, QGraphicsScene, QGraphicsEllipseItem, QGraphicsTextItem, QLabel, QVBoxLayout
 from PySide6.QtCore import Qt, Signal, QObject, Slot
 from PySide6.QtGui import QBrush, QPen
+from radar_volume import RadarVolume
 
 class CircleItem(QObject, QGraphicsEllipseItem):
     """
@@ -70,14 +71,15 @@ class CircleScene(QGraphicsScene):
         if isinstance(item, CircleItem):
             self.circles.append(item)
 
-    def add_labels(self, rows, cols, x_spacing, y_spacing, radius):
+    def add_labels(self, rows, cols, x_spacing, y_spacing, radius, total_height):
         for i in range(rows):
+            y = total_height - (i * y_spacing) + radius - 10
             label = QGraphicsTextItem(str(i))
-            label.setPos(-30, i * y_spacing + radius - 10)
+            label.setPos(-30, y)
             self.addItem(label)
         for j in range(cols):
             label = QGraphicsTextItem(str(j))
-            label.setPos(j * x_spacing + radius - 5, rows * y_spacing)
+            label.setPos(j * x_spacing + radius / 2, rows * y_spacing)
             self.addItem(label)
 
     def highlight_row_and_column(self, row, col):
@@ -149,15 +151,22 @@ class VolumeSliceSelector(QWidget):
         self.scene.clear()
         self.scene.circles = []
 
+        # Calculate the total height for flipping the y-axis
+        total_height = (rows - 1) * y_spacing
+
         # Add updated grid
-        self.scene.add_labels(rows, cols, x_spacing, y_spacing, radius)
+        self.scene.add_labels(rows, cols, x_spacing, y_spacing, radius, total_height)
         for i in range(rows):
             for j in range(cols):
                 x = j * x_spacing
-                y = i * y_spacing
+                y = total_height - (i * y_spacing)
                 circle = CircleItem(i, j, x, y, radius)
                 circle.mouse_hovered.connect(self.scene.highlight_row_and_column)
                 self.scene.addItem(circle)
+
+    @Slot(RadarVolume)
+    def on_render_volume(self, r_volume: RadarVolume):
+        self.on_grid_updated(len(r_volume.elevations_rad), len(r_volume.azimuths_rad), 20, 20, 10)
 
     @Slot(int, int)
     def on_selection(self, i, j):

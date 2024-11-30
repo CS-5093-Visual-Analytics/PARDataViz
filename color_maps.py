@@ -1,16 +1,20 @@
-from matplotlib.colors import LinearSegmentedColormap
+import scipy.io as scio
+from vispy.color import Colormap
 
 class ColorMaps:
     """
     Reflectivity and Velocity Colormaps
     """
+    def __init__(self, path_to_maps) -> None:
+        self.path_to_maps = path_to_maps
+        self.maps_mat = scio.loadmat(self.path_to_maps)
 
-    @staticmethod
-    def reflectivity():        
-        return LinearSegmentedColormap.from_list("reflectivity", ["purple", "blue", "green", "yellow", "orange", "red"])
+    def reflectivity(self):
+        return Colormap(self.maps_mat['reflectivity'])
+        # return Colormap(["purple", "blue", "green", "yellow", "orange", "red"])
 
-    @staticmethod
-    def velocity():
-        return LinearSegmentedColormap.from_list("velocity", ["blue", "lightblue", "lightgreen", "darkgreen", "white", "darkred", "red", "pink", "orange"])
+    def velocity(self):
+        return Colormap(self.maps_mat['velocity'])
+        # return Colormap(["blue", "lightblue", "lightgreen", "darkgreen", "white", "darkred", "red", "pink", "orange"])
 
     

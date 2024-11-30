@@ -1,21 +1,20 @@
 import scipy.io as scio
 import numpy as np
 import sys
-import matplotlib
-matplotlib.use('QtAgg')
-
+import vispy.app
+from vispy.scene import SceneCanvas, PanZoomCamera, AxisWidget
+from vispy.scene.visuals import Image
+from vispy.plot import Fig, PlotWidget
+from vispy.color import Colormap
+from vispy.visuals.transforms import STTransform, PolarTransform
 from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QDockWidget
-from PySide6.QtCore import Qt, Slot
-import matplotlib.pyplot as plt
-from matplotlib.axes import Axes
-from matplotlib.projections.polar import PolarAxes
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT
+from PySide6.QtCore import Qt, Slot, QObject
 from color_maps import ColorMaps
-from matplotlib.colors import Normalize
 from volume_slice_selector import VolumeSliceSelector
+from polar_transform_editor import PolarTransformEditor
 
-mat_file = 'D:/cs5093/20240428/Scan 12/MATLAB/HRUS_240428_020033000_100.mat'
+# mat_file = 'D:/cs5093/20240428/Scan 12/MATLAB/HRUS_240428_020033000_100.mat'
+mat_file = 'D:/cs5093/20240428/Scan 12/MATLAB/HRUS_240428_020051000_100.mat'
 
 # Load the data, collapse unit dimensions (no 1x1 ndarrays)
 data = scio.loadmat(mat_file, squeeze_me=True)
@@ -40,9 +39,13 @@ products = [entry['type'] for entry in volume[0]['prod']]
 
 # Extraxt the range metadata
 start_range_km = volume[0]['start_range_km']
-doppler_range = volume[0]['prod'][0]['dr']
+doppler_resolution = volume[0]['prod'][0]['dr']
+
+# Calculate this in the plotter once you have the metadata there
+y_start = np.floor(start_range_km * 1000 / doppler_resolution)
+
 num_ranges = volume[0]['prod'][0]['data'].shape[0]
-ranges = [(start_range_km + (doppler_range * i) / 1000.0) for i in range(num_ranges)]
+ranges = [(start_range_km + (doppler_resolution * i) / 1000.0) for i in range(num_ranges)]
 
 vol_prod_dict = {}
 for product in products:
@@ -57,10 +60,10 @@ for product in products:
     prod_idx = products.index(product)
     for el_idx in range(len(elevations)):
         prods = volume[el_idx]['prod']
-        if product == 'Z':
-            vol[el_idx, :, :] = np.nan_to_num(prods[prod_idx]['data'].T, nan=0.0)
-        else:
-            vol[el_idx, :, :] = prods[prod_idx]['data'].T
+        # if product == 'Z':
+        #     vol[el_idx, :, :] = np.nan_to_num(prods[prod_idx]['data'].T, nan=0.0)
+        # else:
+        vol[el_idx, :, :] = prods[prod_idx]['data'].T
 
 # Print metadata shapes for verification
 print("Num products: ", len(products))                # 9
@@ -84,20 +87,14 @@ az_idx = len(azimuths) // 2
 rhi_slice = vol[:, az_idx, :]
 print(f'RHI slice shape {rhi_slice.shape}')
 
-class SlicePlotCanvas(FigureCanvasQTAgg):
+class SlicePlot(QObject):
+    cmaps = ColorMaps('D:/cs5093/20240428/MATLAB Display Code/colormaps.mat')
+
     def __init__(self, parent=None, slice_type='ppi'):
-        fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
-        super().__init__(fig)
-        self.ax : PolarAxes = ax
+        super().__init__(parent=parent)
         
         # The type of data slice to display ('ppi'/'rhi')
         self.slice_type = slice_type
-
-        if self.slice_type == 'rhi':
-            self.ax.set_theta_zero_location('E')
-        else:
-            self.ax.set_theta_zero_location('N', offset=-12.5)
-            self.ax.set_theta_direction('clockwise')
 
         # Radar Volume information
         self.azimuths = azimuths
@@ -105,84 +102,158 @@ class SlicePlotCanvas(FigureCanvasQTAgg):
         self.ranges = ranges
         self.vol_prod_dict = vol_prod_dict
 
-        # Color Setup (depends on displayed product)
-        self.cmap = ColorMaps.reflectivity()
-        self.norm = Normalize(vmin=-10, vmax=70)
-        
         # Current locations on the principle axes to slice the data.
         self.current_az = len(azimuths) // 2
         eid = elevations.index(2.25 * np.pi / 180) or None
         self.current_el = eid if eid is not None else 0
 
-        self.update_plot()
+        # Scene setup
+        if self.slice_type == 'rhi':
+            self.canvas = SceneCanvas(size=(len(elevations), len(ranges)))
+        else:
+            self.canvas = SceneCanvas(size=(len(azimuths), len(ranges)))
+        # self.grid = self.canvas.central_widget.add_grid(spacing=0)
+        # self.view = self.grid.add_view(row=0, col=1, camera='panzoom')
+        self.view = self.canvas.central_widget.add_view(camera='panzoom')
 
-    def set_color_map(self, color_map = ColorMaps.reflectivity()):
-        self.cmap = color_map
+        # Color Setup (depends on displayed product)
+        self.cmap = SlicePlot.cmaps.reflectivity()
+
+        vol = self.vol_prod_dict['Z']
+        if self.slice_type == 'rhi':
+            # RHI: elevation x range
+            slice = vol[:, self.current_az, :].T
+        else:
+            # PPI: azimuth x range.
+            slice = vol[self.current_el, :, :].T
+        self.image = Image(slice, parent=self.view.scene, cmap=self.cmap, clim=(-10, 70), grid=(1, 360), method='subdivide')
+        # self.view.camera = "panzoom"
+
+        # Axes
+        # self.x_axis = AxisWidget(orientation='bottom', axis_label="Range (km)")
+        # self.x_axis.stretch = (1, 0.1)
+        # self.grid.add_widget(self.x_axis, row=1, col=1)
+        # self.x_axis.link_view(self.view)
+
+        # Because we transform into polar coordinates
+        # Width of the camera is range_start_km * 1000 / doppler_resolution + len(ranges)
+        cam_width = y_start + len(ranges)
+        if self.slice_type == 'rhi':
+            self.view.camera.set_range((0, cam_width), (0, cam_width))
+        else:
+            self.view.camera.set_range((-cam_width, cam_width), (-cam_width, cam_width))
+        
+        # Calculate the radial extents of the slice
+        if self.slice_type == 'rhi':
+            self.radial_swath = elevations[-1] - elevations[0]
+        else:
+            self.radial_swath = azimuths[-1] - azimuths[0]
+
+        # Complicated method for transforming an image in cartesian coordinates into polar coordinates
+        # Credit: https://stackoverflow.com/a/68390497/13542651
+        scx = 1
+        scy = 1
+        xoff = 0
+        yoff = 0
+
+        ori0 = 0 # Side of the image to collapse at origin (0 for top/1 for bottom)
+        loc0 = self.radial_swath if self.slice_type == 'ppi' else self.elevations[0] # Location of zero (0, 2* np.pi) clockwise
+        dir0 = 1 # Direction cw/ccw -1, 1
+
+        self.on_transform_changed(scx, scy, xoff, yoff, ori0, loc0, dir0)
+        # self.update_plot()
+
+    @Slot(float, float, int, int, int, float, int)
+    def on_transform_changed(self, scale_x, scale_y, offset_x, offset_y, orig0, loc0, dir0):
+        transform = (
+            STTransform(scale=(scale_x, scale_y), translate=(offset_x, offset_y))
+
+            *PolarTransform()
+
+            # 1
+            # pre scale image to work with polar transform
+            # PolarTransform does not work without this
+            # scale vertex coordinates to 2*pi
+            *STTransform(scale=(self.radial_swath / self.image.size[0], 1.0))
+
+            # 2
+            # origin switch via translate.y, fix translate.x
+            *STTransform(translate=(self.image.size[0] * (orig0 % 2) * 0.5,                                                                   
+                                    -self.image.size[1] * (orig0 % 2)))
+
+            # 3
+            # location change via translate.x
+            *STTransform(translate=(self.image.size[0] * (loc0), 0.0))
+
+            # 4
+            # direction switch via inverting scale.x
+            * STTransform(scale=(-dir0 if self.slice_type == 'ppi' else dir0, 1.0))
+
+            # 5
+            # Shift the image up for the receive start (start_range_km * 1000 / doppler_resolution)
+            *STTransform(translate=(0, y_start))
+        )
+        self.image.transform = transform
+        self.canvas.update()
 
     @Slot(int, int)
     def on_az_el_index_selection_changed(self, el_idx, az_idx):
+        # slice_changed = False
+        # if self.slice_type == 'rhi' and self.current_az != az_idx:
+        #     slice_changed = True
+        # elif self.current_el != el_idx:
+        #     slice_changed = True
+        
         self.current_az = az_idx
         self.current_el = el_idx
-        self.update_plot()
-
-    def update_plot(self):
-        ax = self.ax
-        if self.slice_type == 'rhi':
-            ax.set_title("RHI Plot")
-            ax.set_xlabel("Range (km)")
-            # ax.set_ylabel("Height (km)")
-        else:
-            ax.set_title("PPI Plot")
-            ax.set_xlabel("Range (km)")
-            # ax.set_ylabel("Height (km)")
         
-        # Example product reflectivity
         vol = self.vol_prod_dict['Z']
-        
-        # Extract a 2D slice from the 3D data
         if self.slice_type == 'rhi':
-            slice = vol[:-1, self.current_az, :-1]
-            p_grid, r_grid = np.meshgrid(elevations, ranges)
+            # print("RHI Plot Update")
+            # RHI: elevation x range
+            slice = vol[:, self.current_az, :].T
+            # x_extent = (0, self.ranges[-1], self.elevations[0], self.elevations[-1])
         else:
-            slice = vol[self.current_el, :-1, :-1]
-            p_grid, r_grid = np.meshgrid(azimuths, ranges)
+            # print("PPI Plot Update")
+            # PPI: azimuth x range
+            slice = vol[self.current_el, :, :].T
+            # extent = (0, self.ranges[-1], self.azimuths[0], self.azimuths[-1])
         
-        # Plot the data
-        self.ax.pcolormesh(p_grid, r_grid, slice.T, cmap=self.cmap, norm=self.norm, shading='flat')
-
-        # Set the axis limits for RHI
-        self.ax.set_rlim(0, ranges[-1])
-
-        if self.slice_type == 'rhi':
-            self.ax.set_thetalim(elevations[0], elevations[-1])
-        else:
-            self.ax.set_thetalim(azimuths[0], azimuths[-1])
-        self.draw()
+        self.image.set_data(slice)
+        self.canvas.update()
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
+    app = vispy.app.use_app("pyside6")
+    app.create()
+
     window = QMainWindow()
     window.setWindowTitle("Plotting RHI Data")
 
     widget = QWidget()
     layout = QHBoxLayout(widget)
 
-    ppi_canvas = SlicePlotCanvas()
-    layout.addWidget(ppi_canvas)
+    ppi = SlicePlot(widget)
+    layout.addWidget(ppi.canvas.native)
 
-    rhi_canvas = SlicePlotCanvas(slice_type='rhi')
-    layout.addWidget(rhi_canvas)
+    rhi = SlicePlot(widget, slice_type='rhi')
+    layout.addWidget(rhi.canvas.native)
 
     dockable_vss = QDockWidget("Volume Slice Selector", window)
     window.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, dockable_vss)
     volume_slice_selector = VolumeSliceSelector()
     volume_slice_selector.on_grid_updated(len(elevations), len(azimuths), 20, 20, 10)
-    volume_slice_selector.selection_changed.connect(ppi_canvas.on_az_el_index_selection_changed)
-    volume_slice_selector.selection_changed.connect(rhi_canvas.on_az_el_index_selection_changed)
+    volume_slice_selector.selection_changed.connect(ppi.on_az_el_index_selection_changed)
+    volume_slice_selector.selection_changed.connect(rhi.on_az_el_index_selection_changed)
     dockable_vss.setWidget(volume_slice_selector)
+
+    # dockable_te = QDockWidget("Transform Editor", window)
+    # window.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dockable_te)
+    # polar_transform_editor = PolarTransformEditor()
+    # polar_transform_editor.transform_updated.connect(rhi.on_transform_changed)
+    # dockable_te.setWidget(polar_transform_editor)
 
     window.setDockNestingEnabled(True)
     window.setCentralWidget(widget)
 
     window.show()
-    sys.exit(app.exec())
+    app.run()

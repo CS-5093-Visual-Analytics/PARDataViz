@@ -2,20 +2,85 @@ from PySide6.QtCore import QObject, Signal, Slot
 from scan_set import ScanSet
 from scan import Scan
 from pathlib import Path
+from radar_volume import RadarVolume
+from background_loader import BackgroundLoader
+import threading
 
 class Data_Manager(QObject):
     """
-    
+    Data manager for managing radar volume files and loading them in the background.
     """
     scan_selected = Signal(str)
-    scan_times_changed = Signal(int)
+    num_volumes_changed = Signal(int)
+    # volume_loaded = Signal(str, object)
+    render_volume = Signal(RadarVolume)
 
-    def __init__(self):
+    def __init__(self, num_files_to_load=2):
         super().__init__()
         self.selected_scan = None
-        self.scan_times = []
         self.mat_files = []
         self.current_index = 0
+        # Number of files "around" the current file to load, i.e. the total number of mat files loaded at a given time will be (2 * num_files_to_load + 1).
+        # E.g. num_files_to_load = 2 -> matfiles loaded = (2 * 2 + 1) = 5
+        self.num_files_to_load = num_files_to_load
+        self.loaded_volumes = {}
+        self.loader = BackgroundLoader()
+        self.loader.volume_loaded.connect(self.new_name_for_this_thing)
+
+    def get_current_index(self):
+        return self.current_index
+
+    def set_current_index(self, index):
+        if 0 <= index <= len(self.mat_files):
+            self.current_index = index
+            # Remove files outside the range
+            self._cleanup_distant_files()
+            self._load_surrounding_files()
+
+            if self.mat_files[index] in self.loaded_volumes:
+                self.render_volume.emit(self.loaded_volumes[self.mat_files[index]])
+
+    def _load_surrounding_files(self):
+        """
+        Load files within the range of `num_files_to_load` around the current index.
+        """
+        start_index = max(0, self.current_index - self.num_files_to_load)
+        end_index = min(len(self.mat_files), self.current_index + self.num_files_to_load + 1)
+
+        for i in range(start_index, end_index):
+            filename = self.mat_files[i]
+            # Avoid reloading already loaded files
+            if filename not in self.loaded_volumes: 
+                self.loader.load_volume(filename)
+
+    def _cleanup_distant_files(self):
+        """
+        Remove files from the loaded volumes that are not within the range of the current index.
+        """
+        start_index = max(0, self.current_index - self.num_files_to_load)
+        end_index = min(len(self.mat_files), self.current_index + self.num_files_to_load + 1)
+        nearby_files = set(self.mat_files[start_index:end_index])
+
+        # Identify and remove files that are not "nearby"
+        files_to_remove = [filename for filename in self.loaded_volumes if filename not in nearby_files]
+        for filename in files_to_remove:
+            del self.loaded_volumes[filename]
+
+    @Slot(RadarVolume)
+    def new_name_for_this_thing(self, r_volume: RadarVolume):
+        """
+        Slot to handle when a volume is loaded.
+        """
+        self.loaded_volumes[r_volume.filename] = r_volume
+        print(f'DMThread {threading.get_ident()}')
+        print(f"Data Manager: Loaded {r_volume.filename} {r_volume.products['Z'].shape}")
+        # self.volume_loaded.emit(filename, r_volume)
+
+        # This covers the case when a scan is first selected. The first volume will be loaded asynchronously but everyone will need to be notified when it is loaded.
+        if self.mat_files[self.current_index] == r_volume.filename:
+            print(f"Just loaded volume for current index, requesting rendering! {r_volume.filename}")
+            self.render_volume.emit(r_volume)
+
 
     @Slot(ScanSet)
     def on_scanset_load(self, scanset: ScanSet):
@@ -28,12 +93,11 @@ class Data_Manager(QObject):
     def on_scan_selected(self, scan: Scan):
         print(f'Setting selected scan to "{scan.get_name()}"')
         self.selected_scan = scan
-        self.initialize_data_buffer()
+        self.reinitialize_file_list()
     
-    def initialize_data_buffer(self):
+    def reinitialize_file_list(self):
         if self.selected_scan is not None:
             self.mat_files.clear()
-            self.scan_times.clear()
 
             # Working from the base directory for the scanset
             base_dir = self.scanset.get_base_dir()
@@ -41,21 +105,22 @@ class Data_Manager(QObject):
             for filename in self.selected_scan.get_scan_files():
                 
                 # Extract the time for each scan file
-                timestamp = self.extract_timestamp_from_filename(filename)
+                # timestamp = self.extract_timestamp_from_filename(filename)
 
-                if timestamp is not None:
-                    mat_file = base_dir / Path(filename)
+                # if timestamp is not None:
 
-                    self.scan_times.append((timestamp, mat_file))
-                    self.mat_files.append(mat_file)
-                    self.current_index = 0
-                    
-            if len(self.scan_times) > 0:
-                self.scan_times_changed.emit(len(self.scan_times))
+                mat_file = base_dir / Path(filename)
 
-    def extract_timestamp_from_filename(self, filename):
-        try:
-            timestamp_str = filename.split('_')[1] + filename.split('_')[2][:6]
-            return timestamp_str
-        except IndexError:
-            return None
+                # self.scan_times.append((timestamp, mat_file))
+                self.mat_files.append(mat_file)
+            
+            self.set_current_index(0)
+            self.num_volumes_changed.emit(len(self.mat_files))
+
+
+    # def extract_timestamp_from_filename(self, filename):
+    #     try:
+    #         timestamp_str = filename.split('_')[1] + filename.split('_')[2][:6]
+    #         return timestamp_str
+    #     except IndexError:
+    #         return None

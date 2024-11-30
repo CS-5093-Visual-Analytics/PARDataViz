@@ -1,24 +1,11 @@
 import os
 import sys
 import random
-import numpy as np
-import matplotlib
-import matplotlib.colors as mcolors
-import matplotlib.cm as cm
+import vispy.app
 from pathlib import Path
-from datetime import datetime
-from radar_volume import RadarVolume
-
-matplotlib.use('QtAgg')
-
-from PySide6.QtWidgets import (QApplication, QMainWindow, QPushButton, QVBoxLayout, QDockWidget, QSizeGrip,
-                               QHBoxLayout, QWidget, QFileDialog, QLabel, QListWidget, QToolTip, QSlider)
-from PySide6.QtGui import QIcon, QAction, QActionGroup
-from PySide6.QtCore import Qt, Signal, Slot, QObject, QTimer
-
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
-
+from PySide6.QtWidgets import (QApplication, QMainWindow, QDockWidget, QFileDialog, QLabel)
+from PySide6.QtGui import QAction
+from PySide6.QtCore import Qt, Signal, Slot, QMetaType, QSettings
 from ppi_canvas import PPI_Canvas
 from rhi_canvas import RHI_Canvas
 from data_manager import Data_Manager
@@ -27,33 +14,19 @@ from scanset_builder import ScansetBuilder
 from volume_slice_selector import VolumeSliceSelector
 from dynamic_dock_widget import DynamicDockWidget
 from timeline_controls import TimelineControls
-from color_maps import ColorMaps
+from slice_plot import SlicePlot
+from radar_volume import RadarVolume
 
-class Controller(QObject):
-    mat_file_selected = Signal(str)
-
-class RadarDataUI(QMainWindow):
+class PARDataVisualizer(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("PAR Radar Data Viewer")
-        
-        # Initialize attributes
-        self.scan_times = []  
-        self.current_scan_index = 0  
-        self.current_ppi_data_type = "reflectivity"  
-        self.current_rhi_data_type = "velocity"  
-        self.reflectivity_data = None  
-        self.velocity_data = None  
-        self.base_folder_path = None  
+        self.setWindowTitle("PAR Data Visualizer")
+        self.setGeometry(0, 0, 1600, 900)
 
-        # Timer for playback
-        self.play_timer = QTimer()
-        self.play_timer.timeout.connect(self.forward)
-
-        # TODO: Backing data!!!
-        self.controller = Controller()
-        self.data_manager = Data_Manager()
-        self.data_manager.scan_times_changed.connect(self.on_scan_times_changed)
+        # Volume data manager
+        self.data_manager = Data_Manager(num_files_to_load=30)
+        self.data_manager.num_volumes_changed.connect(self.on_num_volumes_changed)
+        # self.data_manager.volume_loaded.connect(self.on_volume_loaded)
 
         # Menu bar and related actions
         menu_bar = self.menuBar()
@@ -112,13 +85,16 @@ class RadarDataUI(QMainWindow):
         self.view_menu.addAction(self.dockable_vss.toggleViewAction())
 
         self.volume_slice_selector = VolumeSliceSelector()
-        self.volume_slice_selector.on_grid_updated(1, 1, 20, 20, 10)
+        self.data_manager.render_volume.connect(lambda r_vol: self.volume_slice_selector.on_grid_updated(len(r_vol.elevations_rad), len(r_vol.azimuths_rad), 20, 20, 10))
+        # self.volume_slice_selector.on_grid_updated(1, 1, 20, 20, 10)
         self.dockable_vss.setWidget(self.volume_slice_selector)
         
         # Timeline controls    
         self.dockable_timec = QDockWidget("Timeline Controls", self)
         self.dockable_timec.hide()
         self.timeline_controls = TimelineControls()
+        self.timeline_controls.forward.connect(lambda: self.data_manager.set_current_index(self.data_manager.get_current_index() + 1))
+        self.timeline_controls.backward.connect(lambda: self.data_manager.set_current_index(self.data_manager.get_current_index() - 1))
         self.dockable_timec.setWidget(self.timeline_controls)
         self.view_menu.addAction(self.dockable_timec.toggleViewAction())
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.dockable_timec)
@@ -145,10 +121,6 @@ class RadarDataUI(QMainWindow):
         initial_rhi = self.create_new_rhi_view(False)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, initial_rhi)
 
-        # TODO: BACKING DATA
-        # Connect the controller signal
-        self.controller.mat_file_selected.connect(self.display_data_from_mat_file)
-
         self.happy_messages = ['Jolly good.', 'Happy hunting.', 'Best of luck.', 'I\'m rooting for you.']
         self.ready_status_widget = QLabel('Ready to rock. 🎸 v0.1')
         self.show()
@@ -171,9 +143,13 @@ class RadarDataUI(QMainWindow):
             dock_widget.setFloating(floating) # Start as a floating window
             dock_widget.show()
 
-        ppi_canvas = PPI_Canvas(dock_widget)
+        slice_plot = SlicePlot(dock_widget)
+        self.data_manager.render_volume.connect(slice_plot.on_radar_volume_updated)
+        self.volume_slice_selector.selection_changed.connect(slice_plot.on_az_el_index_selection_changed)
+        dock_widget.setWidget(slice_plot.canvas.native)
+        # ppi_canvas = PPI_Canvas(dock_widget)
         # TODO: Hook up signals and slots for a new PPI view
-        dock_widget.setWidget(ppi_canvas)
+        # dock_widget.setWidget(ppi_canvas)
 
         toggle_view_action = dock_widget.toggleViewAction()
         # toggle_view_action.setChecked(True)
@@ -205,9 +181,13 @@ class RadarDataUI(QMainWindow):
             dock_widget.setFloating(floating) # Start as a floating window
             dock_widget.show()
         
-        rhi_canvas = RHI_Canvas(dock_widget)
+        slice_plot = SlicePlot(dock_widget, 'rhi')
+        self.data_manager.render_volume.connect(slice_plot.on_radar_volume_updated)
+        self.volume_slice_selector.selection_changed.connect(slice_plot.on_az_el_index_selection_changed)
+        dock_widget.setWidget(slice_plot.canvas.native)
+        # rhi_canvas = RHI_Canvas(dock_widget)
         # TODO: Hook up signals and slots for a new RHI view
-        dock_widget.setWidget(rhi_canvas)
+        # dock_widget.setWidget(rhi_canvas)
         
         toggle_view_action = dock_widget.toggleViewAction()
         # toggle_view_action.setChecked(True)
@@ -247,89 +227,42 @@ class RadarDataUI(QMainWindow):
         self.statusBar().showMessage(status)
 
     @Slot(int)
-    def on_scan_times_changed(self, num_times: int):
-        self.timeline_controls.on_scan_times_changed(num_times)
+    def on_num_volumes_changed(self, num_times: int):
+        self.timeline_controls.on_num_volumes_changed(num_times)
         self.dockable_timec.show()
+
+    def on_volume_loaded(self, filename: str, r_volume: RadarVolume):
+        print(f'Loaded volume {filename} {r_volume.products["Z"].shape}')
 
 # OLD STUFF
 
-
-
-    def set_ppi_data_type(self, data_type):
-        self.current_ppi_data_type = data_type
-        self.update_ppi_view()
-
-    def set_rhi_data_type(self, data_type):
-        self.current_rhi_data_type = data_type
-        self.update_rhi_view()
-
-  
-    def load_mat_files_in_folder(self, item):
-        folder_name = item.text()
-        matlab_folder_path = os.path.join(self.base_folder_path, folder_name, 'MATLAB')
-
-        if os.path.exists(matlab_folder_path):
-            self.mat_file_list.clear()
-            mat_files = [f for f in os.listdir(matlab_folder_path) if f.endswith('.mat')]
-
-            self.scan_times.clear()
-            for mat_file in mat_files:
-                timestamp_str = self.extract_timestamp_from_filename(mat_file)
-                if timestamp_str:
-                    self.scan_times.append((timestamp_str, os.path.join(matlab_folder_path, mat_file)))
-                    self.mat_file_list.addItem(mat_file)
-            
-            # Enable and update the slider range based on loaded scans
-            if self.scan_times:
-                self.timeline_slider.setRange(0, len(self.scan_times) - 1)
-                self.timeline_slider.setEnabled(True)
-            else:
-                self.timeline_slider.setEnabled(False)
-
-    def load_selected_mat_file(self, item):
-        folder_item = self.scan_folder_list.currentItem()
-        if folder_item:
-            folder_name = folder_item.text()
-            full_path = os.path.join(self.base_folder_path, folder_name, 'MATLAB', item.text())
-            self.controller.mat_file_selected.emit(full_path)
-
-    def display_data_from_mat_file(self, file_path):
-        radar_volume, reflectivity_data, velocity_data = RadarVolume.create_radar_volumes_from_mat(file_path)
-        self.reflectivity_data = reflectivity_data
-        self.velocity_data = velocity_data
-        self.radar_volume = radar_volume
-
-        self.update_ppi_view()
-        self.update_rhi_view()
-
-    def update_scan_from_index(self):
-        if not self.scan_times:
-            return
+    # def update_scan_from_index(self):
+    #     if not self.scan_times:
+    #         return
         
-        # Update slider position (prevent recursive updates)
-        self.timeline_slider.blockSignals(True)
-        self.timeline_slider.setValue(self.current_scan_index)
-        self.timeline_slider.blockSignals(False)
+    #     # Update slider position (prevent recursive updates)
+    #     self.timeline_slider.blockSignals(True)
+    #     self.timeline_slider.setValue(self.current_scan_index)
+    #     self.timeline_slider.blockSignals(False)
 
-        # Extract and display data
-        timestamp_str, file_path = self.scan_times[self.current_scan_index]
-        formatted_time = self.format_timestamp(timestamp_str)
-        self.timeline_label.setText(f"Selected Time: {formatted_time}")
-        self.controller.mat_file_selected.emit(file_path)
+    #     # Extract and display data
+    #     timestamp_str, file_path = self.scan_times[self.current_scan_index]
+    #     formatted_time = self.format_timestamp(timestamp_str)
+    #     self.timeline_label.setText(f"Selected Time: {formatted_time}")
+    #     self.controller.mat_file_selected.emit(file_path)    
 
-    
-
-    def format_timestamp(self, timestamp_str):
-        try:
-            parsed_time = datetime.strptime(timestamp_str, "%d%m%y%H%M%S")
-            if parsed_time.year == 2007:
-                parsed_time = parsed_time.replace(year=2024)
-            return parsed_time.strftime("%m/%d/%Y %H:%M:%S")
-        except ValueError:
-            return timestamp_str
+    # def format_timestamp(self, timestamp_str):
+    #     try:
+    #         parsed_time = datetime.strptime(timestamp_str, "%d%m%y%H%M%S")
+    #         if parsed_time.year == 2007:
+    #             parsed_time = parsed_time.replace(year=2024)
+    #         return parsed_time.strftime("%m/%d/%Y %H:%M:%S")
+    #     except ValueError:
+    #         return timestamp_str
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = RadarDataUI()
+    app = vispy.app.use_app("pyside6")
+    app.create()
+    window = PARDataVisualizer()
     window.show()
-    sys.exit(app.exec())
+    sys.exit(app.run())

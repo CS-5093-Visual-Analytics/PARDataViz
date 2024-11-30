@@ -1,20 +1,23 @@
 from PySide6.QtWidgets import QApplication, QWidget, QSlider, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QSpacerItem, QSizePolicy
-from PySide6.QtCore import Qt, QSize, Slot
+from PySide6.QtCore import Qt, QSize, Slot, Signal
 from PySide6.QtGui import QIcon
 
 class TimelineControls(QWidget):
+    forward = Signal()
+    backward = Signal()
+
     def __init__(self):
         super().__init__()
         self.main_layout = QVBoxLayout(self)
         self.timeline_button_layout = QHBoxLayout()
         
         # Add a vertical spacer to push content to the bottom
-        self.main_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
+        # self.main_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
 
         # Timeline controls
         self.back_button = QPushButton()
         self.back_button.setIcon(QIcon.fromTheme("media-skip-backward"))
-        # self.back_button.clicked.connect(self.back)
+        self.back_button.clicked.connect(self.backward)
         self.timeline_button_layout.addWidget(self.back_button)
 
         self.play_button = QPushButton()
@@ -24,7 +27,7 @@ class TimelineControls(QWidget):
 
         self.forward_button = QPushButton()
         self.forward_button.setIcon(QIcon.fromTheme("media-skip-forward"))
-        # self.forward_button.clicked.connect(self.forward)
+        self.forward_button.clicked.connect(self.forward)
         self.timeline_button_layout.addWidget(self.forward_button)
 
         self.timeline_button_layout.addSpacerItem(QSpacerItem(20, 0, QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Minimum))
@@ -52,10 +55,10 @@ class TimelineControls(QWidget):
         print(f"Slider value {int}")
     
     @Slot(int)
-    def on_scan_times_changed(self, num_times: int):
+    def on_num_volumes_changed(self, num_vols: int):
         self.timeline_slider.setValue(0)
-        self.scan_times = num_times
-        self.timeline_slider.setRange(0, num_times - 1)
+        self.scan_times = num_vols
+        self.timeline_slider.setRange(0, num_vols - 1)
 
     def scrub_through_data(self, value):
         if not self.scan_times:
@@ -63,19 +66,8 @@ class TimelineControls(QWidget):
 
         # Update current scan index and trigger data update
         self.current_scan_index = value
-        self.update_scan_from_index()
-
-    def back(self):
-        if not self.scan_times:
-            return
-        self.current_scan_index = (self.current_scan_index - 1) % len(self.scan_times)
-        self.update_scan_from_index()
-
-    def forward(self):
-        if not self.scan_times:
-            return
-        self.current_scan_index = (self.current_scan_index + 1) % len(self.scan_times)
-        self.update_scan_from_index()
+        # self.update_scan_from_index()
+        
 
     def toggle_play_pause(self):
         if not self.scan_times:
