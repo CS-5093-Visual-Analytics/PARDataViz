@@ -144,8 +144,16 @@ class PARDataVisualizer(QMainWindow):
             dock_widget.show()
 
         slice_plot = SlicePlot(dock_widget)
+
+        # Have the slice plot handle the dock widget's context menu
+        dock_widget.customContextMenuRequested.connect(slice_plot.on_dock_custom_context_menu_requested)
+        
+        # When the data manager requests, render a volume
         self.data_manager.render_volume.connect(slice_plot.on_radar_volume_updated)
+        
+        # When the selected RHI/PPI slices change, update the plot
         self.volume_slice_selector.selection_changed.connect(slice_plot.on_az_el_index_selection_changed)
+        
         dock_widget.setWidget(slice_plot.canvas.native)
         # ppi_canvas = PPI_Canvas(dock_widget)
         # TODO: Hook up signals and slots for a new PPI view
@@ -182,8 +190,16 @@ class PARDataVisualizer(QMainWindow):
             dock_widget.show()
         
         slice_plot = SlicePlot(dock_widget, 'rhi')
+
+        # Have the slice plot handle the dock widget's context menu
+        dock_widget.customContextMenuRequested.connect(slice_plot.on_dock_custom_context_menu_requested)
+
+        # When the data manager requests, render a volume
         self.data_manager.render_volume.connect(slice_plot.on_radar_volume_updated)
+
+        # When the selected RHI/PPI slices change, update the plot
         self.volume_slice_selector.selection_changed.connect(slice_plot.on_az_el_index_selection_changed)
+
         dock_widget.setWidget(slice_plot.canvas.native)
         # rhi_canvas = RHI_Canvas(dock_widget)
         # TODO: Hook up signals and slots for a new RHI view
@@ -261,6 +277,11 @@ class PARDataVisualizer(QMainWindow):
     #         return timestamp_str
 
 if __name__ == "__main__":
+    # Solves issue with VisPy plots breaking when docks transition between floating and docked: 
+    # https://github.com/vispy/vispy/issues/1759#issuecomment-724217682
+    QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
+
+    # VisPy + PySide6 application initialization
     app = vispy.app.use_app("pyside6")
     app.create()
     window = PARDataVisualizer()

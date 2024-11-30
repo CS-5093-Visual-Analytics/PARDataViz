@@ -1,5 +1,6 @@
-from PySide6.QtWidgets import QDockWidget
+from PySide6.QtWidgets import QDockWidget, QMenu
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
 
 class DynamicDockWidget(QDockWidget):
     """A dockable widget which removes itself from its parent's list of widgets."""
@@ -7,6 +8,8 @@ class DynamicDockWidget(QDockWidget):
         super().__init__(title, parent)
         self.parent = parent
         self.plot_type = plot_type
+        # Allow the slice plot to hook in and add a custom context menu to this dock widget.
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
 
     def get_plot_type(self):
         return self.plot_type

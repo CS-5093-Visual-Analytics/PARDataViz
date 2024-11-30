@@ -8,10 +8,11 @@ from vispy.plot import Fig, PlotWidget
 from vispy.color import Colormap
 from vispy.visuals.transforms import STTransform, PolarTransform
 from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QDockWidget, QMenu
-from PySide6.QtCore import Qt, Slot, QObject, Signal, QPoint
+from PySide6.QtCore import Qt, Slot, QObject, Signal
+from PySide6.QtGui import QAction, QActionGroup, QPaintEvent
 from color_maps import ColorMaps
 from radar_volume import RadarVolume
-
+from dynamic_dock_widget import DynamicDockWidget
 
 class SlicePlot(QObject):
     cmaps = ColorMaps('D:/cs5093/20240428/MATLAB Display Code/colormaps.mat')
@@ -26,38 +27,77 @@ class SlicePlot(QObject):
         self.current_az = 0
         self.current_el = 0
 
-        # Color Setup (depends on displayed product)
+        # Group the product switching actions together to ensure mutual exclusivity
+        self.action_group = QActionGroup(self)
+        self.reflectivity_mode_action = QAction("Reflectivity", self, checkable=True)
+        self.velocity_mode_action = QAction("Velocity", self, checkable=True)
+
+        # Triggering each product mode action invokes the same slot with the corresponding product as the parameter
+        self.reflectivity_mode_action.triggered.connect(lambda: self.set_product_display('Z'))
+        self.velocity_mode_action.triggered.connect(lambda: self.set_product_display('V'))
+
+        self.action_group.addAction(self.reflectivity_mode_action)
+        self.action_group.addAction(self.velocity_mode_action)
+    
+        # Show reflectivity by default
+        self.reflectivity_mode_action.setChecked(True)
         self.product_to_display = 'Z'
-        self.cmap = SlicePlot.cmaps.reflectivity()
+        self.cmap = self.cmaps.reflectivity()
+        self.clim = (-10, 70)
 
         # Scene setup
-        self.canvas = SPSceneCanvas(parent=self, size=(10, 10))
+        self.canvas = SceneCanvas(size=(10, 10))
         self.canvas.native.setContextMenuPolicy(Qt.CustomContextMenu)
         # self.grid = self.canvas.central_widget.add_grid(spacing=0)
         # self.view = self.grid.add_view(row=0, col=1, camera='panzoom')
         self.view = self.canvas.central_widget.add_view(camera='panzoom')
-        self.image = Image(np.zeros((10, 10)), parent=self.view.scene, cmap=self.cmap, clim=(-10, 70), grid=(1, 360), method='subdivide')
-        
+        self.view.camera.set_range((-5, 15), (-5, 15))
+        self.image = Image(np.zeros((10, 10)), parent=self.view.scene, cmap=self.cmap, clim=self.clim, grid=(1, 720), method='subdivide')
+
         # self.update_plot()
 
-    
-    def on_canvas_right_clicked(self, event):
-        # Right-click
-        if event.button == 2:
-            print("Right-click caught in SceneCanvas.")
-            # Mark the event as handled
-            event.handled = True
-            self.show_context_menu(event)
+    def set_product_display(self, product):
+        self.product_to_display = product
 
-    def show_context_menu(self, event):
-        menu = QMenu()
-        menu.addAction("Option 1", lambda: print("Option 1 Clicked"))
-        menu.addAction("Option 2", lambda: print("Option 2 Clicked"))
+        match product:
+            case 'Z':
+                self.cmap = SlicePlot.cmaps.reflectivity()
+                self.clim = SlicePlot.cmaps.reflectivity_lims()
+            case 'V':
+                self.cmap = SlicePlot.cmaps.velocity()
+                self.clim = SlicePlot.cmaps.velocity_lims()
+        
+        # Image color setup (depends on displayed product)
+        self.image.cmap = self.cmap
+        self.image.clim = self.clim
+        self.update_plot()
 
-        pos = self.canvas.native.mapToGlobal(QPoint(event.pos[0], event.pos[1]))
-        print(event.pos)
-        print(pos)
-        menu.exec(pos)
+    def get_product_display(self):
+        return self.product_to_display
+
+    def on_dock_custom_context_menu_requested(self, pos):
+        context_menu = QMenu()
+
+        dummy_action = QAction("Select product:", self)
+        dummy_action.setEnabled(False)
+        context_menu.addAction(dummy_action)
+        context_menu.addSeparator()
+
+        context_menu.addAction(self.reflectivity_mode_action)
+        context_menu.addAction(self.velocity_mode_action)
+
+        parent: DynamicDockWidget = self.parent()
+        if parent.isFloating():
+            print("Floating")
+
+        # Parent should be a dynamic dock widget
+        context_menu.exec(self.parent().mapToGlobal(pos))        
+
+    # Possible fix for dock removing/reparent issue: https://github.com/vispy/vispy/issues/2270
+    def paintEvent(self, event: QPaintEvent) -> None:
+        # force send paintevent
+        self.canvas.native.paintEvent(event)
+        return super().paintEvent(event)
 
     @Slot(RadarVolume)
     def on_radar_volume_updated(self, volume: RadarVolume):
@@ -77,7 +117,7 @@ class SlicePlot(QObject):
         self.y_start = np.floor(volume.start_range_km / volume.doppler_resolution_km) 
         cam_width = self.y_start + len(self.ranges_km)
         # if self.slice_type == 'rhi':
-        self.view.camera.set_range((0, cam_width), (0, cam_width))
+        # self.view.camera.set_range((0, cam_width), (0, cam_width))
         # else:
             # self.view.camera.set_range((-cam_width, cam_width), (-cam_width, cam_width))
         
@@ -149,39 +189,3 @@ class SlicePlot(QObject):
         self.image.transform = transform
 
         self.canvas.update()
-
-class SPSceneCanvas(SceneCanvas):
-    def __init__(self, parent=None, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.unfreeze()
-        self.parent = parent
-        if self.parent is not None:
-            self.events.mouse_press.connect(self.on_mouse_press)
-            self.events.mouse_move.connect(self.on_mouse_move)
-            self.events.mouse_release.connect(self.on_mouse_release)
-        self.freeze()
-    
-    def on_mouse_press(self, event):
-        if event.button == 2:
-            modifiers = event.modifiers
-            if modifiers and 'Alt' in modifiers:
-                event.handled = True
-                if self.parent:
-                    self.parent.view.camera.interactive = False
-                    self.parent.on_canvas_right_clicked(event)
-            return
-    
-    def on_mouse_move(self, event):
-        if event.button == 2:  # Right-click
-            modifiers = event.modifiers
-            # Only suppress if Alt is pressed
-            if modifiers and 'Alt' in modifiers:
-                event.handled = True
-
-    def on_mouse_release(self, event):
-        self.parent.view.camera.interactive = True
-        if event.button == 2:  # Right-click
-            modifiers = event.modifiers
-            # Only suppress if Alt is pressed
-            if modifiers and 'Alt' in modifiers:
-                event.handled = True

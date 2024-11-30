@@ -11,10 +11,14 @@ class ColorMaps:
 
     def reflectivity(self):
         return Colormap(self.maps_mat['reflectivity'])
-        # return Colormap(["purple", "blue", "green", "yellow", "orange", "red"])
+    
+    def reflectivity_lims(self):
+        return (-10, 70)
 
     def velocity(self):
         return Colormap(self.maps_mat['velocity'])
-        # return Colormap(["blue", "lightblue", "lightgreen", "darkgreen", "white", "darkred", "red", "pink", "orange"])
-
+    
+    def velocity_lims(self):
+        return (-24, 24)
+    
     
