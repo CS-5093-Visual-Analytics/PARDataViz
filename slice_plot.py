@@ -7,11 +7,9 @@ from vispy.scene.visuals import Image
 from vispy.plot import Fig, PlotWidget
 from vispy.color import Colormap
 from vispy.visuals.transforms import STTransform, PolarTransform
-from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QDockWidget
-from PySide6.QtCore import Qt, Slot, QObject
+from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QDockWidget, QMenu
+from PySide6.QtCore import Qt, Slot, QObject, Signal, QPoint
 from color_maps import ColorMaps
-from volume_slice_selector import VolumeSliceSelector
-from polar_transform_editor import PolarTransformEditor
 from radar_volume import RadarVolume
 
 
@@ -33,13 +31,33 @@ class SlicePlot(QObject):
         self.cmap = SlicePlot.cmaps.reflectivity()
 
         # Scene setup
-        self.canvas = SceneCanvas(size=(10, 10))
+        self.canvas = SPSceneCanvas(parent=self, size=(10, 10))
+        self.canvas.native.setContextMenuPolicy(Qt.CustomContextMenu)
         # self.grid = self.canvas.central_widget.add_grid(spacing=0)
         # self.view = self.grid.add_view(row=0, col=1, camera='panzoom')
         self.view = self.canvas.central_widget.add_view(camera='panzoom')
         self.image = Image(np.zeros((10, 10)), parent=self.view.scene, cmap=self.cmap, clim=(-10, 70), grid=(1, 360), method='subdivide')
         
         # self.update_plot()
+
+    
+    def on_canvas_right_clicked(self, event):
+        # Right-click
+        if event.button == 2:
+            print("Right-click caught in SceneCanvas.")
+            # Mark the event as handled
+            event.handled = True
+            self.show_context_menu(event)
+
+    def show_context_menu(self, event):
+        menu = QMenu()
+        menu.addAction("Option 1", lambda: print("Option 1 Clicked"))
+        menu.addAction("Option 2", lambda: print("Option 2 Clicked"))
+
+        pos = self.canvas.native.mapToGlobal(QPoint(event.pos[0], event.pos[1]))
+        print(event.pos)
+        print(pos)
+        menu.exec(pos)
 
     @Slot(RadarVolume)
     def on_radar_volume_updated(self, volume: RadarVolume):
@@ -132,4 +150,38 @@ class SlicePlot(QObject):
 
         self.canvas.update()
 
-        
+class SPSceneCanvas(SceneCanvas):
+    def __init__(self, parent=None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.unfreeze()
+        self.parent = parent
+        if self.parent is not None:
+            self.events.mouse_press.connect(self.on_mouse_press)
+            self.events.mouse_move.connect(self.on_mouse_move)
+            self.events.mouse_release.connect(self.on_mouse_release)
+        self.freeze()
+    
+    def on_mouse_press(self, event):
+        if event.button == 2:
+            modifiers = event.modifiers
+            if modifiers and 'Alt' in modifiers:
+                event.handled = True
+                if self.parent:
+                    self.parent.view.camera.interactive = False
+                    self.parent.on_canvas_right_clicked(event)
+            return
+    
+    def on_mouse_move(self, event):
+        if event.button == 2:  # Right-click
+            modifiers = event.modifiers
+            # Only suppress if Alt is pressed
+            if modifiers and 'Alt' in modifiers:
+                event.handled = True
+
+    def on_mouse_release(self, event):
+        self.parent.view.camera.interactive = True
+        if event.button == 2:  # Right-click
+            modifiers = event.modifiers
+            # Only suppress if Alt is pressed
+            if modifiers and 'Alt' in modifiers:
+                event.handled = True
