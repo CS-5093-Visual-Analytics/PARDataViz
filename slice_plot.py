@@ -151,16 +151,20 @@ class SlicePlot(QObject):
 
         # self.update_plot()
 
+    def set_plot_title(self):
+        if self.slice_type == 'rhi':
+            self.title.text = f'RHI ({self.product_to_display}) - AZ {self.azimuths_rad[self.current_az] * 180.0 / np.pi:.2f}°'
+        else:
+            self.title.text = f'PPI ({self.product_to_display}) - EL (Tilt) {self.elevations_rad[self.current_el] * 180.0 / np.pi:.2f}°'
+
     def set_product_display(self, product):
         self.product_to_display = product
 
         # Set dock-tab/window title
         if self.slice_type == 'rhi':
             self.parent().setWindowTitle(f'View {self.id} - RHI ({product})')
-            self.title.text = f'RHI ({product})'
         else:
             self.parent().setWindowTitle(f'View {self.id} - PPI ({product})')
-            self.title.text = f'PPI ({product})'
 
         (cmap, clim) = self.cmaps.get_cmap_and_clims_for_product(self.product_to_display)
         self.cmap = cmap
@@ -293,6 +297,9 @@ Range: {self.ranges_km[y]:.3f} km
         else:
             # PPI: azimuth x range.
             slice = prod[self.current_el, :, :].T
+
+        # Update the plot title
+        self.set_plot_title()
 
         self.image.set_data(slice)
 
