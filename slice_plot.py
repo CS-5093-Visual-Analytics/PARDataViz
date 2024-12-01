@@ -2,7 +2,8 @@ import scipy.io as scio
 import numpy as np
 import sys
 import vispy.app
-from vispy.scene import SceneCanvas, PanZoomCamera, AxisWidget
+from vispy.scene import Label
+from vispy.scene import SceneCanvas, PanZoomCamera, AxisWidget, ColorBarWidget
 from vispy.scene.visuals import Image
 from vispy.plot import Fig, PlotWidget
 from vispy.color import Colormap
@@ -62,13 +63,80 @@ class SlicePlot(QObject):
         self.clim = (-10, 70)
 
         # Scene setup
+        #
+        # Grid layout:
+        #
+        # __|  - 0 -  |  - 1 -  |  - 2 -  |
+        #   |                             |
+        #  0|  ..........title........... |   
+        #   |                             |
+        # --| --------------------------- |
+        #   |        |          |         |
+        #  1| y_axis |   view   |  c_bar  |
+        #   |        |          |         |
+        # --| ------ | -------- | ------- |
+        #   |        |          |         |
+        #  2| (none) |  x_axis  |  (none) |
+        #   |        |          |         |
+        # --| ------ | -------- | ------- |
+        #
+
         self.canvas = SceneCanvas(size=(10, 10))
         self.canvas.native.setContextMenuPolicy(Qt.CustomContextMenu)
-        # self.grid = self.canvas.central_widget.add_grid(spacing=0)
-        # self.view = self.grid.add_view(row=0, col=1, camera='panzoom')
-        self.view = self.canvas.central_widget.add_view(camera='panzoom')
+        self.grid = self.canvas.central_widget.add_grid(spacing=1.0, margin=10.0)
+        
+        # Cell (0,0) - Title
+        self.title = Label(
+            f'RHI ({self.product_to_display})' if slice_type == 'rhi' else f'PPI ({self.product_to_display})', 
+            color='white')
+        self.title.margin = 10.0
+        self.title.height_max = 40.0
+        self.grid.add_widget(self.title, row=0, col=0, col_span=3)
+
+        # Cell (1,0) - Y-Axis
+        self.y_axis = AxisWidget(
+            orientation="left", 
+            axis_label="Meridonal Distance (km)" if self.slice_type == 'ppi' else "Height (km)",
+            axis_font_size=8,
+            axis_label_margin=75.0,
+            tick_label_margin=15.0)
+        self.y_axis.width_min = 80.0
+        self.y_axis.width_max = 120.0
+        self.grid.add_widget(self.y_axis, row=1, col=0)
+
+        # Cell (1,1) - View
+        self.view = self.grid.add_view(row=1, col=1, camera='panzoom')        
         self.view.camera.set_range((-5, 15), (-5, 15))
-        self.image = Image(np.zeros((10, 10)), parent=self.view.scene, cmap=self.cmap, clim=self.clim, grid=(360, 360), method='subdivide')
+        self.image = Image(np.zeros((10, 10)), parent=self.view.scene, cmap=self.cmap, clim=self.clim, grid=(360, 360), method='subdivide', interpolation='nearest')
+
+        # Cell (1,2) - Color Bar
+        self.color_bar = ColorBarWidget(
+            label="",
+            clim=self.clim,
+            cmap=self.cmap,
+            orientation="right",
+            border_width=1,
+            label_color='white')
+        
+        # Figuring out how to set the font size on the color bar tick marks was insane
+        for tick in self.color_bar.ticks:
+            tick.font_size = 6
+        self.color_bar.width_max = 120
+        self.grid.add_widget(self.color_bar, row=1, col=2)
+
+        # Cell (2,1) - X-Axis
+        self.x_axis = AxisWidget(
+            orientation="bottom", 
+            axis_label="Zonal Distance (km)" if self.slice_type == 'ppi' else "Range (km)",
+            axis_font_size=8,
+            axis_label_margin=75.0,
+            tick_label_margin=45.0)
+        self.x_axis.height_min = 120.0
+        self.x_axis.height_max = 160.0
+        self.grid.add_widget(self.x_axis, row=2, col=1)
+
+        self.y_axis.link_view(self.view)
+        self.x_axis.link_view(self.view)
 
         # self.update_plot()
 
@@ -78,12 +146,18 @@ class SlicePlot(QObject):
         # Set dock-tab/window title
         if self.slice_type == 'rhi':
             self.parent().setWindowTitle(f'View {self.id} - RHI ({product})')
+            self.title.text = f'RHI ({product})'
         else:
             self.parent().setWindowTitle(f'View {self.id} - PPI ({product})')
+            self.title.text = f'PPI ({product})'
 
         (cmap, clim) = self.cmaps.get_cmap_and_clims_for_product(self.product_to_display)
         self.cmap = cmap
         self.clim = clim
+
+        # Update color bar
+        self.color_bar.cmap = self.cmap
+        self.color_bar.clim = self.clim
 
         # Image color setup (depends on displayed product)
         self.image.cmap = self.cmap
@@ -138,6 +212,7 @@ class SlicePlot(QObject):
         # Width of the camera is range_start_km * 1000 / doppler_resolution + len(ranges)
         self.y_start = np.floor(volume.start_range_km / volume.doppler_resolution_km) 
         cam_width = self.y_start + len(self.ranges_km)
+        
         # if self.slice_type == 'rhi':
         # self.view.camera.set_range((0, cam_width), (0, cam_width))
         # else:
@@ -177,8 +252,11 @@ class SlicePlot(QObject):
 
         # Complicated method for transforming an image in cartesian coordinates into polar coordinates
         # Credit: https://stackoverflow.com/a/68390497/13542651
-        scx = 1
-        scy = 1
+
+        # Compute the scaling factor to convert from pixel space into kilometers
+        km_per_pixel = self.ranges_km[-1] / (self.y_start + len(self.ranges_km))
+        scx = km_per_pixel
+        scy = km_per_pixel
         xoff = 0
         yoff = 0
 
@@ -216,4 +294,4 @@ class SlicePlot(QObject):
         )
         self.image.transform = transform
 
-        self.canvas.update()
+        self.grid.update()
