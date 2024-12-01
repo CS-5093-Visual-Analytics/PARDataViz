@@ -2,13 +2,14 @@ import scipy.io as scio
 import numpy as np
 import sys
 import vispy.app
+import time
 from vispy.scene import Label
 from vispy.scene import SceneCanvas, PanZoomCamera, AxisWidget, ColorBarWidget
 from vispy.scene.visuals import Image
 from vispy.plot import Fig, PlotWidget
 from vispy.color import Colormap
 from vispy.visuals.transforms import STTransform, PolarTransform
-from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QDockWidget, QMenu
+from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QDockWidget, QMenu, QToolTip
 from PySide6.QtCore import Qt, Slot, QObject, Signal, QPoint
 from PySide6.QtGui import QAction, QActionGroup, QPaintEvent
 from color_maps import ColorMaps
@@ -31,14 +32,17 @@ class SlicePlot(QObject):
         self.current_az = 0
         self.current_el = 0
 
+        self.throttle = time.monotonic()
+
         # Group the product switching actions together to ensure mutual exclusivity
+        # https://www.weather.gov/jan/dualpolupgrade-products
         self.action_group = QActionGroup(self)
-        self.reflectivity_mode_action = QAction("Reflectivity", self, checkable=True)
-        self.velocity_mode_action = QAction("Velocity", self, checkable=True)
-        self.phi_mode_action = QAction("Phi", self, checkable=True)
-        self.rho_mode_action = QAction("Rho", self, checkable=True)
-        self.width_mode_action = QAction("Width", self, checkable=True)
-        self.zdr_mode_action = QAction("Zdr", self, checkable=True)
+        self.reflectivity_mode_action = QAction("Reflectivity (Z)", self, checkable=True)
+        self.velocity_mode_action = QAction("Velocity (V)", self, checkable=True)
+        self.phi_mode_action = QAction("Differential Phase (ϕDP)", self, checkable=True)
+        self.rho_mode_action = QAction("Correlation Coefficient (ρHV)", self, checkable=True)
+        self.width_mode_action = QAction("Spectrum Width (W)", self, checkable=True)
+        self.zdr_mode_action = QAction("Differential Reflectivity (ZDR)", self, checkable=True)
 
         # Triggering each product mode action invokes the same slot with the corresponding product as the parameter
         # Products: ['Z', 'V', 'W', 'D', 'P', 'R', 'S']
@@ -85,7 +89,10 @@ class SlicePlot(QObject):
         # fast though.
 
         self.canvas = SceneCanvas(size=(10, 10))
+        # Intercept mouse presses to display product switching menu
         self.canvas.events.mouse_press.connect(self.on_mouse_press)
+        # Intercept mouse movement to display tooltip of data
+        self.canvas.events.mouse_move.connect(self.on_mouse_move)
         self.canvas.native.setContextMenuPolicy(Qt.CustomContextMenu)
         self.grid = self.canvas.central_widget.add_grid(spacing=1.0, margin=10.0)
         
@@ -115,7 +122,7 @@ class SlicePlot(QObject):
 
         # Cell (1,2) - Color Bar
         self.color_bar = ColorBarWidget(
-            label="",
+            label=self.cmaps.get_units_for_product(self.product_to_display),
             clim=self.clim,
             cmap=self.cmap,
             orientation="right",
@@ -162,6 +169,7 @@ class SlicePlot(QObject):
         # Update color bar
         self.color_bar.cmap = self.cmap
         self.color_bar.clim = self.clim
+        self.color_bar.label = self.cmaps.get_units_for_product(self.product_to_display)
 
         # Image color setup (depends on displayed product)
         self.image.cmap = self.cmap
@@ -177,6 +185,50 @@ class SlicePlot(QObject):
             # Check if the click is within the label
             if self.title.rect.contains(event.pos[0], event.pos[1]):
                 self.show_context_menu(event)
+    
+    def on_mouse_move(self, event):
+        """Handle mouse move events."""
+        # throttle mouse events to 50ms
+        if time.monotonic() - self.throttle < 0.05:
+            return
+        self.throttle = time.monotonic()
+
+        if event.pos is None:
+            # Ignore invalid positions
+            return
+        
+        transform = self.image.transforms.get_transform(map_to="canvas")
+        canvas_pos = np.floor(transform.imap(event.pos))
+
+        corrected_pos = np.array([
+            44 - (canvas_pos[0] + 22) if self.slice_type == 'ppi' else 20 - (canvas_pos[0] - 43),
+            canvas_pos[1]])
+
+        x = int(corrected_pos[0])
+        y = int(corrected_pos[1])
+
+        prod = self.products[self.product_to_display]
+        if self.slice_type == 'rhi':
+            # RHI: elevation x range
+            slice = prod[:, self.current_az, :].T
+        else:
+            # PPI: azimuth x range.
+            slice = prod[self.current_el, :, :].T
+
+        # Check if coordinates are within the image bounds
+        if 0 <= x < slice.shape[1] and 0 <= y < slice.shape[0]:
+            # print(f"Coordinate: {y}, {x}")
+            value = slice[y, x]  # Get the image value at the pixel
+            tooltip_text = f'''{self.product_to_display}: {value:.2f} {self.cmaps.get_units_for_product(self.product_to_display)}
+Range: {self.ranges_km[y]:.3f} km
+{"Azimuth: " if self.slice_type == "ppi" else "Elevation: "}{self.azimuths_rad[x] * 180.0 / np.pi if self.slice_type == 'ppi' else self.elevations_rad[x] * 180.0 / np.pi:.1f}°'''
+        else:
+            tooltip_text = ""
+
+        # Show tooltip
+        
+        QToolTip.showText(self.canvas.native.mapToGlobal(QPoint(event.pos[0], event.pos[1])), tooltip_text, self.canvas.native)
+
 
     def show_context_menu(self, event):
         """Show a context menu at the mouse position."""

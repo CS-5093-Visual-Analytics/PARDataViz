@@ -17,9 +17,20 @@ class ColorMaps:
             'P': (self.phi_dp(), self.phi_dp_lims()),
             'R': (self.rho_hv(), self.rho_hv_lims())
         }
+        self.units_by_prod = {
+            'Z': 'dB',
+            'V': 'm/s',
+            'W': 'σ(m/s)',
+            'D': 'dB',
+            'P': '',
+            'R': '°'
+        }
 
     def get_cmap_and_clims_for_product(self, product):
-        return self.maps_by_prod[product]        
+        return self.maps_by_prod[product]  
+
+    def get_units_for_product(self, product):
+        return self.units_by_prod[product]      
 
     def reflectivity(self):
         return Colormap(self.maps_mat['reflectivity'])
