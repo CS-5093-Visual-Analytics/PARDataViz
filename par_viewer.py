@@ -5,9 +5,7 @@ import vispy.app
 from pathlib import Path
 from PySide6.QtWidgets import (QApplication, QMainWindow, QDockWidget, QFileDialog, QLabel)
 from PySide6.QtGui import QAction
-from PySide6.QtCore import Qt, Signal, Slot, QMetaType, QSettings
-from ppi_canvas import PPI_Canvas
-from rhi_canvas import RHI_Canvas
+from PySide6.QtCore import Qt, Signal, Slot
 from data_manager import Data_Manager
 from scan_set import ScanSet
 from scanset_builder import ScansetBuilder
