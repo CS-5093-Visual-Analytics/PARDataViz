@@ -7,8 +7,6 @@ class DynamicDockWidget(QDockWidget):
     def __init__(self, title, parent=None):
         super().__init__(title, parent)
         self.parent = parent
-        # Allow the slice plot to hook in and add a custom context menu to this dock widget.
-        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
 
     def clean_up(self):
         """Disconnect signals and perform cleanup."""

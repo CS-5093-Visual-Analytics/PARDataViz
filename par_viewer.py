@@ -91,6 +91,7 @@ class PARDataVisualizer(QMainWindow):
         
         # Timeline controls    
         self.dockable_timec = QDockWidget("Timeline Controls", self)
+        self.dockable_timec.setFloating(True) # Start as a floating window
         self.dockable_timec.hide()
         self.timeline_controls = TimelineControls()
         self.timeline_controls.forward.connect(lambda: self.data_manager.set_current_index(self.data_manager.get_current_index() + 1))
@@ -149,9 +150,6 @@ class PARDataVisualizer(QMainWindow):
         
         # Connect slots and signals
 
-        # Have the slice plot handle the dock widget's context menu
-        dock_widget.customContextMenuRequested.connect(slice_plot.on_dock_custom_context_menu_requested)
-
         # When the data manager requests, render a volume
         self.data_manager.render_volume.connect(slice_plot.on_radar_volume_updated)
 
@@ -161,7 +159,7 @@ class PARDataVisualizer(QMainWindow):
         # When the user hovers on RHI/PPI slices, update the plot
         self.volume_slice_selector.slice_hovered.connect(slice_plot.on_az_el_slice_hovered)
 
-
+        
         # View menu action management
         toggle_view_action = dock_widget.toggleViewAction()
         self.view_menu.insertAction(self.dummy_view_action, toggle_view_action)

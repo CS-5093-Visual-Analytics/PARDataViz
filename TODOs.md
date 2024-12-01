@@ -19,4 +19,4 @@ Every time a new volume is loaded, the selected indexes in the volume slice sele
 
 Get the "play" button working.
 
-Axes and current product label.
+Axes and current product label. ✔️

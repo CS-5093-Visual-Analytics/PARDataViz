@@ -9,7 +9,7 @@ from vispy.plot import Fig, PlotWidget
 from vispy.color import Colormap
 from vispy.visuals.transforms import STTransform, PolarTransform
 from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QDockWidget, QMenu
-from PySide6.QtCore import Qt, Slot, QObject, Signal
+from PySide6.QtCore import Qt, Slot, QObject, Signal, QPoint
 from PySide6.QtGui import QAction, QActionGroup, QPaintEvent
 from color_maps import ColorMaps
 from radar_volume import RadarVolume
@@ -80,8 +80,12 @@ class SlicePlot(QObject):
         #   |        |          |         |
         # --| ------ | -------- | ------- |
         #
+        # VisPy's documentation is horrid, there are just a handful of examples
+        # and an API spec from which you have to derive everything. It's super
+        # fast though.
 
         self.canvas = SceneCanvas(size=(10, 10))
+        self.canvas.events.mouse_press.connect(self.on_mouse_press)
         self.canvas.native.setContextMenuPolicy(Qt.CustomContextMenu)
         self.grid = self.canvas.central_widget.add_grid(spacing=1.0, margin=10.0)
         
@@ -167,7 +171,19 @@ class SlicePlot(QObject):
     def get_product_display(self):
         return self.product_to_display
 
-    def on_dock_custom_context_menu_requested(self, pos):
+    def on_mouse_press(self, event):
+        """Handle mouse press events."""
+        if event.type == 'mouse_press' and event.button == 2:  # Right mouse button
+            # Check if the click is within the label
+            if self.title.rect.contains(event.pos[0], event.pos[1]):
+                self.show_context_menu(event)
+
+    def show_context_menu(self, event):
+        """Show a context menu at the mouse position."""
+        # Convert VisPy event position to global Qt position
+        pos = self.canvas.native.mapToGlobal(QPoint(event.pos[0], event.pos[1]))
+
+        # Build up the context menu
         context_menu = QMenu()
 
         dummy_action = QAction("Select product:", self)
@@ -182,18 +198,8 @@ class SlicePlot(QObject):
         context_menu.addAction(self.width_mode_action)
         context_menu.addAction(self.zdr_mode_action)
 
-        parent: DynamicDockWidget = self.parent()
-        if parent.isFloating():
-            print("Floating")
-
-        # Parent should be a dynamic dock widget
-        context_menu.exec(self.parent().mapToGlobal(pos))        
-
-    # Possible fix for dock removing/reparent issue: https://github.com/vispy/vispy/issues/2270
-    def paintEvent(self, event: QPaintEvent) -> None:
-        # force send paintevent
-        self.canvas.native.paintEvent(event)
-        return super().paintEvent(event)
+        # Show it
+        context_menu.exec(pos)
 
     @Slot(RadarVolume)
     def on_radar_volume_updated(self, volume: RadarVolume):
@@ -202,21 +208,9 @@ class SlicePlot(QObject):
         self.ranges_km = volume.ranges_km
         self.products = volume.products
 
-        # Axes
-        # self.x_axis = AxisWidget(orientation='bottom', axis_label="Range (km)")
-        # self.x_axis.stretch = (1, 0.1)
-        # self.grid.add_widget(self.x_axis, row=1, col=1)
-        # self.x_axis.link_view(self.view)
-
         # Because we transform into polar coordinates
         # Width of the camera is range_start_km * 1000 / doppler_resolution + len(ranges)
         self.y_start = np.floor(volume.start_range_km / volume.doppler_resolution_km) 
-        cam_width = self.y_start + len(self.ranges_km)
-        
-        # if self.slice_type == 'rhi':
-        # self.view.camera.set_range((0, cam_width), (0, cam_width))
-        # else:
-            # self.view.camera.set_range((-cam_width, cam_width), (-cam_width, cam_width))
         
         # Calculate the radial extents of the slice
         if self.slice_type == 'rhi':
