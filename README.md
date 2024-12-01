@@ -28,5 +28,5 @@ pip install -r requirements.txt
 Install the dependencies (described in the "environment setup" section above), then run the following command:
 
 ```
-python3 ./par_gui/main.py
+python ./par_data_visualizer.py
 ```
