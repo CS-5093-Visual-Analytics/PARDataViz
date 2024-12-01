@@ -147,6 +147,12 @@ class SlicePlot(QObject):
         self.current_el = el_idx
         self.update_plot()
         
+    @Slot(int, int)
+    def on_az_el_slice_hovered(self, el_idx, az_idx):
+        self.current_az = az_idx
+        self.current_el = el_idx
+        self.update_plot()
+
     def update_plot(self):
         
         prod = self.products[self.product_to_display]

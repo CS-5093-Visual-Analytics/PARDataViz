@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import QApplication, QWidget, QGraphicsView, QGraphicsScene, QGraphicsEllipseItem, QGraphicsTextItem, QLabel, QVBoxLayout
-from PySide6.QtCore import Qt, Signal, QObject, Slot
+from PySide6.QtCore import Qt, Signal, QObject, Slot, QEvent
 from PySide6.QtGui import QBrush, QPen
 from radar_volume import RadarVolume
 
@@ -54,6 +54,19 @@ class CircleItem(QObject, QGraphicsEllipseItem):
         else:
             self.setBrush(self.default_brush)
 
+class MouseLeaveFilter(QObject):
+    """
+    An event filter object which allows us to detect when the mouse has left the GraphicsScene
+    for the volume slice selector.
+    """
+    mouse_left = Signal()
+
+    def eventFilter(self, object, event: QEvent):
+        # Useful debug message for figuring out what types of events can be filtered.
+        # print(event.type())
+        if event.type() == QEvent.Type.GraphicsSceneLeave:
+            self.mouse_left.emit()
+
 class CircleScene(QGraphicsScene):
     """
     A 2D graphics scene containing primitive circular glyphs which allows for the
@@ -69,6 +82,12 @@ class CircleScene(QGraphicsScene):
         self.circles = []
         self.last_hover_x = -1
         self.last_hover_y = -1
+        self.selected_row = 0
+        self.selected_col = 0
+
+        self.leave_filter = MouseLeaveFilter()
+        self.leave_filter.mouse_left.connect(self.on_mouse_left)
+        self.installEventFilter(self.leave_filter)
 
     def addItem(self, item):
         super().addItem(item)
@@ -115,7 +134,7 @@ class CircleScene(QGraphicsScene):
         # Check if the indices are within the grid bounds
         if 0 <= row < self.rows and 0 <= col < self.cols:
             if self.last_hover_x != col or self.last_hover_y != row:
-                print(f"New hover location! ({col}, {row})")
+                # print(f"New hover location! ({col}, {row})")
                 self.mouse_hovered.emit(row, col)
             self.last_hover_x = col
             self.last_hover_y = row
@@ -125,9 +144,17 @@ class CircleScene(QGraphicsScene):
             self.last_hover_y = -1
         super().mouseMoveEvent(event)
 
+    @Slot()
+    def on_mouse_left(self):
+        # Tell all the listeners to set themselves back to the selected row and col when the mouse leaves.
+        self.clear_highlights()
+        self.selector_widget.selection_changed.emit(self.selected_row, self.selected_col)
+
     @Slot(int, int)
     def on_circle_selected(self, i, j):
         """Slot to handle circle selection."""
+        self.selected_row = i
+        self.selected_col = j
         for circle in self.circles:
             if circle.i == i or circle.j == j:
                 circle.set_selected(True)
@@ -150,7 +177,10 @@ class VolumeSliceSelector(QWidget):
     The "update_grid" slot allows other UI elements to update the grid. For instance,
     when a new volume of data is loaded with different angular extents).
     """
-    selection_changed = Signal(int, int) # Signal emitted when a circle is selected
+    # Signal emitted when a slice is selected
+    selection_changed = Signal(int, int) 
+    # Signal emitted when a slice is hovered
+    slice_hovered = Signal(int, int)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -161,6 +191,7 @@ class VolumeSliceSelector(QWidget):
 
         self.view = QGraphicsView()
         self.scene = CircleScene(self.label, self)
+        self.scene.mouse_hovered.connect(self.on_hover)
         self.view.setScene(self.scene)
         self.layout.addWidget(self.view)
 
@@ -204,6 +235,10 @@ class VolumeSliceSelector(QWidget):
     def on_selection(self, i, j):
         """Slot to programmatically select a slice."""
         self.scene.on_circle_selected(i, j)
+
+    @Slot(int, int)
+    def on_hover(self, i, j):
+        self.slice_hovered.emit(i, j)
 
 if __name__ == "__main__":
     import sys

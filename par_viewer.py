@@ -154,6 +154,9 @@ class PARDataVisualizer(QMainWindow):
         # When the selected RHI/PPI slices change, update the plot
         self.volume_slice_selector.selection_changed.connect(slice_plot.on_az_el_index_selection_changed)
         
+        # When the user hovers on RHI/PPI slices, update the plot
+        self.volume_slice_selector.slice_hovered.connect(slice_plot.on_az_el_slice_hovered)
+
         dock_widget.setWidget(slice_plot.canvas.native)
         # ppi_canvas = PPI_Canvas(dock_widget)
         # TODO: Hook up signals and slots for a new PPI view
@@ -199,6 +202,9 @@ class PARDataVisualizer(QMainWindow):
 
         # When the selected RHI/PPI slices change, update the plot
         self.volume_slice_selector.selection_changed.connect(slice_plot.on_az_el_index_selection_changed)
+
+        # When the user hovers on RHI/PPI slices, update the plot
+        self.volume_slice_selector.slice_hovered.connect(slice_plot.on_az_el_slice_hovered)
 
         dock_widget.setWidget(slice_plot.canvas.native)
         # rhi_canvas = RHI_Canvas(dock_widget)
