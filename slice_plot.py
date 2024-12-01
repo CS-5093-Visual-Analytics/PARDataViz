@@ -230,14 +230,15 @@ class SlicePlot(QObject):
         if 0 <= x < slice.shape[1] and 0 <= y < slice.shape[0]:
             # print(f"Coordinate: {y}, {x}")
             value = slice[y, x]  # Get the image value at the pixel
+            # FIXME: There are probably better estimates for height.
             tooltip_text = f'''{self.product_to_display}: {value:.2f} {self.cmaps.get_units_for_product(self.product_to_display)}
 Range: {self.ranges_km[y]:.3f} km
-{"Azimuth: " if self.slice_type == "ppi" else "Elevation: "}{self.azimuths_rad[x] * 180.0 / np.pi if self.slice_type == 'ppi' else self.elevations_rad[x] * 180.0 / np.pi:.1f}°'''
+{"Azimuth: " if self.slice_type == "ppi" else "Elevation: "}{self.azimuths_rad[x] * 180.0 / np.pi if self.slice_type == 'ppi' else self.elevations_rad[x] * 180.0 / np.pi:.1f}°
+Height: {self.ranges_km[y] * np.sin(self.elevations_rad[x] if self.slice_type == 'rhi' else self.elevations_rad[self.current_el]):.2f} km'''
         else:
             tooltip_text = ""
 
         # Show tooltip
-        
         QToolTip.showText(self.canvas.native.mapToGlobal(QPoint(event.pos[0], event.pos[1])), tooltip_text, self.canvas.native)
 
 
@@ -346,7 +347,7 @@ Range: {self.ranges_km[y]:.3f} km
 
             # 4
             # direction switch via inverting scale.x
-            * STTransform(scale=(-dir0 if self.slice_type == 'ppi' else dir0, 1.0))
+            *STTransform(scale=(-dir0 if self.slice_type == 'ppi' else dir0, 1.0))
 
             # 5
             # Shift the image up for the receive start (start_range_km * 1000 / doppler_resolution)
