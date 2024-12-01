@@ -23,8 +23,6 @@ class PARDataVisualizer(QMainWindow):
 
         # Volume data manager
         self.data_manager = Data_Manager(num_files_to_load=10)
-        self.data_manager.num_volumes_changed.connect(self.on_num_volumes_changed)
-        # self.data_manager.volume_loaded.connect(self.on_volume_loaded)
 
         # Menu bar and related actions
         menu_bar = self.menuBar()
@@ -92,8 +90,8 @@ class PARDataVisualizer(QMainWindow):
         self.dockable_timec.setFloating(True) # Start as a floating window
         self.dockable_timec.hide()
         self.timeline_controls = TimelineControls()
-        self.timeline_controls.forward.connect(lambda: self.data_manager.set_current_index(self.data_manager.get_current_index() + 1))
-        self.timeline_controls.backward.connect(lambda: self.data_manager.set_current_index(self.data_manager.get_current_index() - 1))
+        self.timeline_controls.timeline_index_changed.connect(lambda index: self.data_manager.set_current_index(index))
+        self.data_manager.num_volumes_changed.connect(self.timeline_controls.on_num_volumes_changed)
         self.dockable_timec.setWidget(self.timeline_controls)
         self.view_menu.addAction(self.dockable_timec.toggleViewAction())
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.dockable_timec)
@@ -128,6 +126,8 @@ class PARDataVisualizer(QMainWindow):
         because a QApplication will continue running as long as at least one
         top-level widget is still visible. This behavior is undesireable. The 
         user shouldn't have to close all windows before exiting."""
+        # Signal background loading tasks to stop.
+        self.data_manager.loader.stop_flag.set()
         QApplication.instance().quit()
 
     def create_new_dynamic_view(self, floating, slice_type):
@@ -195,11 +195,6 @@ class PARDataVisualizer(QMainWindow):
     @Slot(str)
     def on_status_updated(self, status: str):
         self.statusBar().showMessage(status)
-
-    @Slot(int)
-    def on_num_volumes_changed(self, num_times: int):
-        self.timeline_controls.on_num_volumes_changed(num_times)
-        self.dockable_timec.show()
 
     def on_volume_loaded(self, filename: str, r_volume: RadarVolume):
         print(f'Loaded volume {filename} {r_volume.products["Z"].shape}')

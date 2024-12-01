@@ -7,14 +7,26 @@ class VolumeLoaderTask(QRunnable):
     """
     QRunnable task for concurrent loading of volume data files.
     """
-    def __init__(self, filename, callback):
+    def __init__(self, filename, callback, stop_flag):
         super().__init__()
         self.filename = filename
         self.callback = callback
+        self.stop_flag = stop_flag
 
     def run(self):
-        # Load the volume and invoke the callback
+        if self.stop_flag.is_set():
+            # If the stop flag was set while this task was queued to run, exit immediately.
+            return
+        
+        # Load the volume
         r_volume = RadarVolume.build_radar_volume_from_matlab_file(self.filename)
+        
+        if self.stop_flag.is_set():
+            # Exit early if the application is closing. 
+            # A more advance approach would break the file loading up into sections and test this flag repeatedly to exit sooner.
+            return
+        
+        # Invoke the callback
         self.callback(r_volume)
 
 class BackgroundLoader(QObject):
@@ -29,12 +41,14 @@ class BackgroundLoader(QObject):
     def __init__(self):
         super().__init__()
         self.thread_pool = QThreadPool.globalInstance()
+        self.thread_pool.setMaxThreadCount(5)
+        self.stop_flag = threading.Event()
 
     def load_volume(self, filename):
         # Create a new VolumeLoaderTask for the file
-        task = VolumeLoaderTask(filename, self._on_volume_loaded)
+        task = VolumeLoaderTask(filename, self._on_volume_loaded, self.stop_flag)
         self.thread_pool.start(task)
-    
+        
     @Slot(RadarVolume)
     def _on_volume_loaded(self, r_volume: RadarVolume):
         self.volume_loaded.emit(r_volume)

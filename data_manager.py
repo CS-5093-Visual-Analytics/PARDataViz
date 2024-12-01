@@ -4,7 +4,7 @@ from scan import Scan
 from pathlib import Path
 from radar_volume import RadarVolume
 from background_loader import BackgroundLoader
-import threading
+import numpy as np
 
 class Data_Manager(QObject):
     """
@@ -25,12 +25,13 @@ class Data_Manager(QObject):
         self.num_files_to_load = num_files_to_load
         self.loaded_volumes = {}
         self.loader = BackgroundLoader()
-        self.loader.volume_loaded.connect(self.new_name_for_this_thing)
+        self.loader.volume_loaded.connect(self.on_volume_loaded)
 
     def get_current_index(self):
         return self.current_index
 
     def set_current_index(self, index):
+        print(f"Data Manger: Index {index} requested")
         if 0 <= index <= len(self.mat_files):
             self.current_index = index
             # Remove files outside the range
@@ -50,7 +51,9 @@ class Data_Manager(QObject):
         for i in range(start_index, end_index):
             filename = self.mat_files[i]
             # Avoid reloading already loaded files
-            if filename not in self.loaded_volumes: 
+            if filename not in self.loaded_volumes and self.files_state[i] == 0:
+                # Set the state tracker to loading
+                self.files_state[i] = 1 
                 self.loader.load_volume(filename)
 
     def _cleanup_distant_files(self):
@@ -64,17 +67,23 @@ class Data_Manager(QObject):
         # Identify and remove files that are not "nearby"
         files_to_remove = [filename for filename in self.loaded_volumes if filename not in nearby_files]
         for filename in files_to_remove:
+            index = self.mat_files.index(filename)
+            print(f'Data Manager: Unloaded index {self.mat_files.index(filename)} {filename}')
+            self.files_state[index] = 0
             del self.loaded_volumes[filename]
 
     @Slot(RadarVolume)
-    def new_name_for_this_thing(self, r_volume: RadarVolume):
+    def on_volume_loaded(self, r_volume: RadarVolume):
         """
         Slot to handle when a volume is loaded.
         """
+        index = self.mat_files.index(r_volume.filename)
         self.loaded_volumes[r_volume.filename] = r_volume
-        print(f'DMThread {threading.get_ident()}')
-        print(f"Data Manager: Loaded {r_volume.filename} {r_volume.products['Z'].shape}")
+        print(f"Data Manager: Loaded index {index} {r_volume.filename} {r_volume.products['Z'].shape}")
         # self.volume_loaded.emit(filename, r_volume)
+        
+        # Set the state tracker to loaded
+        self.files_state[index] = 2
 
         # This covers the case when a scan is first selected. The first volume will be loaded asynchronously but everyone will need to be notified when it is loaded.
         if self.mat_files[self.current_index] == r_volume.filename:
@@ -113,6 +122,15 @@ class Data_Manager(QObject):
 
                 # self.scan_times.append((timestamp, mat_file))
                 self.mat_files.append(mat_file)
+            
+            # This 1-D numpy array tracks the current state of each file:
+            #
+            # 0 - unloaded
+            # 1 - loading
+            # 2 - loaded
+            #
+            # The data manager will use this array to avoid requesting to load the same file multiple times.
+            self.files_state = np.zeros(len(self.mat_files))
             
             self.set_current_index(0)
             self.num_volumes_changed.emit(len(self.mat_files))
