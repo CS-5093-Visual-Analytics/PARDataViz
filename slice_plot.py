@@ -201,15 +201,22 @@ class SlicePlot(QObject):
             # Ignore invalid positions
             return
         
+        # Calculate the inverse transform from local screen coords to image pixel space.
+        # Each pixel corresponds to a pair of indices sampling the data.
         transform = self.image.transforms.get_transform(map_to="canvas")
-        canvas_pos = np.floor(transform.imap(event.pos))
+        canvas_pos = transform.imap(event.pos)
 
-        corrected_pos = np.array([
-            44 - (canvas_pos[0] + 22) if self.slice_type == 'ppi' else 20 - (canvas_pos[0] - 43),
-            canvas_pos[1]])
+        # FIXME: This is a hack to fix the transform to correctly index the input data.
+        # I have no idea why this is necessary, but I was luck to notice that the inverse transform was correct in terms of shape, but there is some x-offset that is not accounted for.
+        corrected_pos = np.floor(np.array([
+            44 - (canvas_pos[0] + 21.5) if self.slice_type == 'ppi' else 20 - (canvas_pos[0] - 42.6),
+            canvas_pos[1]]))
 
         x = int(corrected_pos[0])
         y = int(corrected_pos[1])
+
+        # Debug print
+        # print(f"Uncorrected coords: ({canvas_pos[0]:.2f}, {canvas_pos[1]:.2f})\tCorrected coords: ({x}, {y})")
 
         prod = self.products[self.product_to_display]
         if self.slice_type == 'rhi':
@@ -314,7 +321,7 @@ Range: {self.ranges_km[y]:.3f} km
         yoff = 0
 
         ori0 = 0 # Side of the image to collapse at origin (0 for top/1 for bottom)
-        loc0 = self.radial_swath if self.slice_type == 'ppi' else -self.elevations_rad[0] # Location of zero (0, 2* np.pi) clockwise
+        loc0 = self.radial_swath if self.slice_type == 'ppi' else self.elevations_rad[0] # Location of zero (0, 2* np.pi) clockwise
         dir0 = 1 # Direction cw/ccw -1, 1
 
         transform = (
