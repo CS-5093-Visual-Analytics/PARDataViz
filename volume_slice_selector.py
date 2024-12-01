@@ -25,19 +25,19 @@ class CircleItem(QObject, QGraphicsEllipseItem):
         self.selected = False
         self.setBrush(self.default_brush)
         self.setPen(QPen(Qt.black))
-        self.setAcceptHoverEvents(True)
+        # self.setAcceptHoverEvents(True)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.scene().on_circle_selected(self.i, self.j)
 
-    def hoverEnterEvent(self, event):
-        self.mouse_hovered.emit(self.i, self.j)
-        super().hoverEnterEvent(event)
+    # def hoverEnterEvent(self, event):
+    #     self.mouse_hovered.emit(self.i, self.j)
+    #     super().hoverEnterEvent(event)
 
-    def hoverLeaveEvent(self, event):
-        self.scene().clear_highlights()
-        super().hoverLeaveEvent(event)
+    # def hoverLeaveEvent(self, event):
+    #     self.scene().clear_highlights()
+    #     super().hoverLeaveEvent(event)
 
     def set_highlighted(self, highlighted):
         if self.selected:
@@ -60,11 +60,15 @@ class CircleScene(QGraphicsScene):
     simultaneous interactive highlighting and selection of rows and columns
     (slices within a volumetric block of data).
     """
+    mouse_hovered = Signal(int, int)
+
     def __init__(self, label, selector_widget, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.label = label
         self.selector_widget = selector_widget
         self.circles = []
+        self.last_hover_x = -1
+        self.last_hover_y = -1
 
     def addItem(self, item):
         super().addItem(item)
@@ -72,6 +76,13 @@ class CircleScene(QGraphicsScene):
             self.circles.append(item)
 
     def add_labels(self, rows, cols, x_spacing, y_spacing, radius, total_height):
+        # Store values in attributes to be used by mouse move event
+        self.rows = rows
+        self.cols = cols
+        self.x_spacing = x_spacing
+        self.y_spacing = y_spacing
+        self.total_height = total_height
+        
         for i in range(rows):
             y = total_height - (i * y_spacing) + radius - 10
             label = QGraphicsTextItem(str(i))
@@ -92,6 +103,27 @@ class CircleScene(QGraphicsScene):
     def clear_highlights(self):
         for circle in self.circles:
             circle.set_highlighted(False)
+
+    def mouseMoveEvent(self, event):
+        # Map the scene position to the nearest grid indices
+        pos = event.scenePos()
+        col = int(pos.x() / self.x_spacing)
+        row = int((self.total_height - pos.y()) / self.y_spacing) + 1
+
+        self.highlight_row_and_column(row, col)
+
+        # Check if the indices are within the grid bounds
+        if 0 <= row < self.rows and 0 <= col < self.cols:
+            if self.last_hover_x != col or self.last_hover_y != row:
+                print(f"New hover location! ({col}, {row})")
+                self.mouse_hovered.emit(row, col)
+            self.last_hover_x = col
+            self.last_hover_y = row
+        else: 
+            # Reset last hover coords when leaving bounds
+            self.last_hover_x = -1
+            self.last_hover_y = -1
+        super().mouseMoveEvent(event)
 
     @Slot(int, int)
     def on_circle_selected(self, i, j):
@@ -161,7 +193,7 @@ class VolumeSliceSelector(QWidget):
                 x = j * x_spacing
                 y = total_height - (i * y_spacing)
                 circle = CircleItem(i, j, x, y, radius)
-                circle.mouse_hovered.connect(self.scene.highlight_row_and_column)
+                # circle.mouse_hovered.connect(self.scene.highlight_row_and_column)
                 self.scene.addItem(circle)
 
     @Slot(RadarVolume)

@@ -31,14 +31,27 @@ class SlicePlot(QObject):
         self.action_group = QActionGroup(self)
         self.reflectivity_mode_action = QAction("Reflectivity", self, checkable=True)
         self.velocity_mode_action = QAction("Velocity", self, checkable=True)
+        self.phi_mode_action = QAction("Phi", self, checkable=True)
+        self.rho_mode_action = QAction("Rho", self, checkable=True)
+        self.width_mode_action = QAction("Width", self, checkable=True)
+        self.zdr_mode_action = QAction("Zdr", self, checkable=True)
 
         # Triggering each product mode action invokes the same slot with the corresponding product as the parameter
+        # Products: ['Z', 'V', 'W', 'D', 'P', 'R', 'S']
         self.reflectivity_mode_action.triggered.connect(lambda: self.set_product_display('Z'))
         self.velocity_mode_action.triggered.connect(lambda: self.set_product_display('V'))
+        self.phi_mode_action.triggered.connect(lambda: self.set_product_display('P'))
+        self.rho_mode_action.triggered.connect(lambda: self.set_product_display('R'))
+        self.width_mode_action.triggered.connect(lambda: self.set_product_display('W'))
+        self.zdr_mode_action.triggered.connect(lambda: self.set_product_display('D'))
 
         self.action_group.addAction(self.reflectivity_mode_action)
         self.action_group.addAction(self.velocity_mode_action)
-    
+        self.action_group.addAction(self.phi_mode_action)
+        self.action_group.addAction(self.rho_mode_action)
+        self.action_group.addAction(self.width_mode_action)
+        self.action_group.addAction(self.zdr_mode_action)
+
         # Show reflectivity by default
         self.reflectivity_mode_action.setChecked(True)
         self.product_to_display = 'Z'
@@ -52,21 +65,16 @@ class SlicePlot(QObject):
         # self.view = self.grid.add_view(row=0, col=1, camera='panzoom')
         self.view = self.canvas.central_widget.add_view(camera='panzoom')
         self.view.camera.set_range((-5, 15), (-5, 15))
-        self.image = Image(np.zeros((10, 10)), parent=self.view.scene, cmap=self.cmap, clim=self.clim, grid=(1, 720), method='subdivide')
+        self.image = Image(np.zeros((10, 10)), parent=self.view.scene, cmap=self.cmap, clim=self.clim, grid=(360, 360), method='subdivide')
 
         # self.update_plot()
 
     def set_product_display(self, product):
         self.product_to_display = product
+        (cmap, clim) = self.cmaps.get_cmap_and_clims_for_product(self.product_to_display)
+        self.cmap = cmap
+        self.clim = clim
 
-        match product:
-            case 'Z':
-                self.cmap = SlicePlot.cmaps.reflectivity()
-                self.clim = SlicePlot.cmaps.reflectivity_lims()
-            case 'V':
-                self.cmap = SlicePlot.cmaps.velocity()
-                self.clim = SlicePlot.cmaps.velocity_lims()
-        
         # Image color setup (depends on displayed product)
         self.image.cmap = self.cmap
         self.image.clim = self.clim
@@ -85,6 +93,10 @@ class SlicePlot(QObject):
 
         context_menu.addAction(self.reflectivity_mode_action)
         context_menu.addAction(self.velocity_mode_action)
+        context_menu.addAction(self.phi_mode_action)
+        context_menu.addAction(self.rho_mode_action)
+        context_menu.addAction(self.width_mode_action)
+        context_menu.addAction(self.zdr_mode_action)
 
         parent: DynamicDockWidget = self.parent()
         if parent.isFloating():

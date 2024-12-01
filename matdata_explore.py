@@ -48,6 +48,7 @@ num_ranges = volume[0]['prod'][0]['data'].shape[0]
 ranges = [(start_range_km + (doppler_resolution * i) / 1000.0) for i in range(num_ranges)]
 
 vol_prod_dict = {}
+print(products)
 for product in products:
     # Initialize the 3-D block of data for the current product (el x az x range)
     if product == 'R':
