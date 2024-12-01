@@ -47,11 +47,11 @@ class PARDataVisualizer(QMainWindow):
         self.view_menu = menu_bar.addMenu("View")
         
         new_ppi_view_action = QAction("New PPI View...", self)
-        new_ppi_view_action.triggered.connect(lambda: self.create_new_ppi_view(True))
+        new_ppi_view_action.triggered.connect(lambda: self.create_new_dynamic_view(True, 'ppi'))
         self.view_menu.addAction(new_ppi_view_action)
 
         new_rhi_view_action = QAction("New RHI View...", self)
-        new_rhi_view_action.triggered.connect(lambda: self.create_new_rhi_view(True))
+        new_rhi_view_action.triggered.connect(lambda: self.create_new_dynamic_view(True, 'rhi'))
         self.view_menu.addAction(new_rhi_view_action)
 
         # Sections (e.g. context_menu.addSection()) may be ignored depending on the
@@ -106,19 +106,16 @@ class PARDataVisualizer(QMainWindow):
         self.dummy_view_action.setVisible(False)
         self.view_menu.addAction(self.dummy_view_action)
         
-        self.rhi_views = []
-        self.rhi_view_actions = {}
-        self.rhi_view_count = 0
-        self.ppi_views = []
-        self.ppi_view_actions = {}
-        self.ppi_view_count = 0
+        self.dynamic_views = []
+        self.dynamic_view_actions = {}
+        self.dynamic_view_count = 0
 
         # Initial PPI Canvas
-        initial_ppi = self.create_new_ppi_view(False)
+        initial_ppi = self.create_new_dynamic_view(False, 'ppi')
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, initial_ppi)
 
         # Initial RHI Canvas
-        initial_rhi = self.create_new_rhi_view(False)
+        initial_rhi = self.create_new_dynamic_view(False, 'rhi')
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, initial_rhi)
 
         self.happy_messages = ['Jolly good.', 'Happy hunting.', 'Best of luck.', 'I\'m rooting for you.']
@@ -134,65 +131,23 @@ class PARDataVisualizer(QMainWindow):
         user shouldn't have to close all windows before exiting."""
         QApplication.instance().quit()
 
-    def create_new_ppi_view(self, floating):
-        self.ppi_view_count = self.ppi_view_count + 1
-        view_title = f'PPI View {self.ppi_view_count}'
-        dock_widget = DynamicDockWidget(view_title, self, plot_type='PPI')
-        
+    def create_new_dynamic_view(self, floating, slice_type):
+        self.dynamic_view_count = self.dynamic_view_count + 1
+        if slice_type == 'rhi':
+            view_title = f'View {self.dynamic_view_count} - RHI (Z)'
+        else:
+            view_title = f'View {self.dynamic_view_count} - PPI (Z)'
+        dock_widget = DynamicDockWidget(view_title, self)
+
         if floating:
             dock_widget.setFloating(floating) # Start as a floating window
             dock_widget.show()
-
-        slice_plot = SlicePlot(dock_widget)
-
-        # Have the slice plot handle the dock widget's context menu
-        dock_widget.customContextMenuRequested.connect(slice_plot.on_dock_custom_context_menu_requested)
         
-        # When the data manager requests, render a volume
-        self.data_manager.render_volume.connect(slice_plot.on_radar_volume_updated)
-        
-        # When the selected RHI/PPI slices change, update the plot
-        self.volume_slice_selector.selection_changed.connect(slice_plot.on_az_el_index_selection_changed)
-        
-        # When the user hovers on RHI/PPI slices, update the plot
-        self.volume_slice_selector.slice_hovered.connect(slice_plot.on_az_el_slice_hovered)
-
+        # Slice plot setup
+        slice_plot = SlicePlot(self.dynamic_view_count, dock_widget, slice_type)
         dock_widget.setWidget(slice_plot.canvas.native)
-        # ppi_canvas = PPI_Canvas(dock_widget)
-        # TODO: Hook up signals and slots for a new PPI view
-        # dock_widget.setWidget(ppi_canvas)
-
-        toggle_view_action = dock_widget.toggleViewAction()
-        # toggle_view_action.setChecked(True)
-        self.view_menu.insertAction(self.dummy_view_action, toggle_view_action)
-        # Add an entry in the widget -> action mapping
-        self.ppi_view_actions[dock_widget] = toggle_view_action
-
-        self.ppi_views.append(dock_widget)
-        self.statusBar().showMessage('Dynamic PPI view created.')
-        return dock_widget
-
-    def remove_ppi_view(self, dock_widget):
-        if dock_widget in self.ppi_views:
-            self.ppi_views.remove(dock_widget)
-
-        # Use the mapping between widget -> action to easily remove the view action
-        if dock_widget in self.ppi_view_actions:
-            action = self.ppi_view_actions.pop(dock_widget)
-            self.view_menu.removeAction(action)
         
-        self.statusBar().showMessage('Dynamic PPI view closed.')
-
-    def create_new_rhi_view(self, floating):
-        self.rhi_view_count = self.rhi_view_count + 1
-        view_title = f'RHI View {self.rhi_view_count}'
-        dock_widget = DynamicDockWidget(view_title, self, plot_type='RHI')
-
-        if floating:
-            dock_widget.setFloating(floating) # Start as a floating window
-            dock_widget.show()
-        
-        slice_plot = SlicePlot(dock_widget, 'rhi')
+        # Connect slots and signals
 
         # Have the slice plot handle the dock widget's context menu
         dock_widget.customContextMenuRequested.connect(slice_plot.on_dock_custom_context_menu_requested)
@@ -206,31 +161,28 @@ class PARDataVisualizer(QMainWindow):
         # When the user hovers on RHI/PPI slices, update the plot
         self.volume_slice_selector.slice_hovered.connect(slice_plot.on_az_el_slice_hovered)
 
-        dock_widget.setWidget(slice_plot.canvas.native)
-        # rhi_canvas = RHI_Canvas(dock_widget)
-        # TODO: Hook up signals and slots for a new RHI view
-        # dock_widget.setWidget(rhi_canvas)
-        
-        toggle_view_action = dock_widget.toggleViewAction()
-        # toggle_view_action.setChecked(True)
-        self.view_menu.insertAction(self.dummy_view_action, toggle_view_action)
-        # Add an entry in the widget -> action mapping
-        self.rhi_view_actions[dock_widget] = toggle_view_action
 
-        self.rhi_views.append(dock_widget)
-        self.statusBar().showMessage('Dynamic RHI view created.')
+        # View menu action management
+        toggle_view_action = dock_widget.toggleViewAction()
+        self.view_menu.insertAction(self.dummy_view_action, toggle_view_action)
+        
+        # Add an entry in the widget -> action mapping
+        self.dynamic_view_actions[dock_widget] = toggle_view_action
+
+        self.dynamic_views.append(dock_widget)
+        self.statusBar().showMessage(f'{dock_widget.windowTitle()} view created.')
         return dock_widget
 
-    def remove_rhi_view(self, dock_widget):
-        if dock_widget in self.rhi_views:
-            self.rhi_views.remove(dock_widget)
+    def remove_dynamic_view(self, dock_widget):
+        if dock_widget in self.dynamic_views:
+            self.dynamic_views.remove(dock_widget)
 
         # Use the mapping between widget -> action to easily remove the view action
-        if dock_widget in self.rhi_view_actions:
-            action = self.rhi_view_actions.pop(dock_widget)
+        if dock_widget in self.dynamic_view_actions:
+            action = self.dynamic_view_actions.pop(dock_widget)
             self.view_menu.removeAction(action)
 
-        self.statusBar().showMessage('Dynamic RHI view closed.')
+        self.statusBar().showMessage(f'{dock_widget.windowTitle()} view closed.')
         
     def new_scanset(self):
         self.dockable_ssb.setVisible(True)

@@ -17,9 +17,12 @@ from dynamic_dock_widget import DynamicDockWidget
 class SlicePlot(QObject):
     cmaps = ColorMaps('D:/cs5093/20240428/MATLAB Display Code/colormaps.mat')
 
-    def __init__(self, parent=None, slice_type='ppi'):
+    def __init__(self, id, parent=None, slice_type='ppi'):
         super().__init__(parent=parent)
         
+        # Set this plot's id (used for window/dock-tab title)
+        self.id = id
+
         # The type of data slice to display ('ppi'/'rhi')
         self.slice_type = slice_type
 
@@ -71,6 +74,13 @@ class SlicePlot(QObject):
 
     def set_product_display(self, product):
         self.product_to_display = product
+
+        # Set dock-tab/window title
+        if self.slice_type == 'rhi':
+            self.parent().setWindowTitle(f'View {self.id} - RHI ({product})')
+        else:
+            self.parent().setWindowTitle(f'View {self.id} - PPI ({product})')
+
         (cmap, clim) = self.cmaps.get_cmap_and_clims_for_product(self.product_to_display)
         self.cmap = cmap
         self.clim = clim

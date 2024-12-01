@@ -66,6 +66,10 @@ class MouseLeaveFilter(QObject):
         # print(event.type())
         if event.type() == QEvent.Type.GraphicsSceneLeave:
             self.mouse_left.emit()
+            # Return True because we responded to the event.
+            return True
+        # Return False because we didn't care about the event.
+        return False
 
 class CircleScene(QGraphicsScene):
     """
