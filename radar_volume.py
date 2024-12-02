@@ -76,20 +76,18 @@ class RadarVolume(object):
             products = {}
             for p_type in product_types:
                 # Initialize the 3-D block of data for the current product (el x az x range)
-                if p_type == 'R':
-                    products[p_type] = np.zeros((num_elevations, num_azimuths, num_ranges), dtype=complex)
-                else:
-                    products[p_type] = np.zeros((num_elevations, num_azimuths, num_ranges))
+                products[p_type] = np.zeros((num_elevations, num_azimuths, num_ranges))
 
                 # Transform the source data into the 3-D block for the current product.
                 p_data = products[p_type]
                 p_idx = product_types.index(p_type)
                 for el_idx in range(num_elevations):
                     prods = volume[el_idx]['prod']
-                    # if product == 'Z':
-                    #     vol[el_idx, :, :] = np.nan_to_num(prods[prod_idx]['data'].T, nan=0.0)
-                    # else:
-                    p_data[el_idx, :, :] = prods[p_idx]['data'].T
+                    if p_type == 'R':
+                        p_data[el_idx, :, :] = np.abs(prods[p_idx]['data']).astype(np.float32).T
+                    else:
+                        p_data[el_idx, :, :] = prods[p_idx]['data'].astype(np.float32).T
+                    
 
             return RadarVolume(
                 filename=file_path,

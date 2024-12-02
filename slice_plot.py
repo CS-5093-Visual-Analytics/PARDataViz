@@ -116,9 +116,9 @@ class SlicePlot(QObject):
         self.grid.add_widget(self.y_axis, row=1, col=0)
 
         # Cell (1,1) - View
-        self.view = self.grid.add_view(row=1, col=1, camera='panzoom')        
+        self.view = self.grid.add_view(row=1, col=1, camera='panzoom')
         self.view.camera.set_range((-5, 15), (-5, 15))
-        self.image = Image(np.zeros((10, 10)), parent=self.view.scene, cmap=self.cmap, clim=self.clim, grid=(360, 360), method='subdivide', interpolation='nearest')
+        self.image = Image(np.zeros((10, 10), dtype=np.float32), parent=self.view.scene, cmap=self.cmap, clim=self.clim, grid=(360, 360), method='subdivide', interpolation='nearest')
 
         # Cell (1,2) - Color Bar
         self.color_bar = ColorBarWidget(
@@ -309,6 +309,10 @@ Height: {self.ranges_km[y] * np.sin(self.elevations_rad[x] if self.slice_type ==
         # Update the plot title
         self.set_plot_title()
 
+        # FIXME: make locking the aspect ratio a setting?
+        # Enforce the aspect ratio to be 1
+        self.view.camera.aspect = 1
+        
         self.image.set_data(slice)
 
         # Complicated method for transforming an image in cartesian coordinates into polar coordinates

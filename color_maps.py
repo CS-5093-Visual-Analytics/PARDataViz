@@ -8,7 +8,7 @@ class ColorMaps:
     def __init__(self, path_to_maps) -> None:
         self.path_to_maps = path_to_maps
         self.maps_mat = scio.loadmat(self.path_to_maps)
-        # Products: ['Z', 'V', 'W', 'D', 'P', 'R', 'S']
+        # Products: ['Z', 'V', 'W', 'D', 'P', 'R']
         self.maps_by_prod = {
             'Z': (self.reflectivity(), self.reflectivity_lims()),
             'V': (self.velocity(), self.velocity_lims()),
