@@ -5,6 +5,7 @@ import vispy.app
 import time
 from vispy.scene import Label
 from vispy.scene import SceneCanvas, PanZoomCamera, AxisWidget, ColorBarWidget
+from vispy.visuals import TextVisual
 from vispy.scene.visuals import Image
 from vispy.plot import Fig, PlotWidget
 from vispy.color import Colormap
@@ -70,19 +71,19 @@ class SlicePlot(QObject):
         #
         # Grid layout:
         #
-        # __|  - 0 -  |  - 1 -  |  - 2 -  |
-        #   |                             |
-        #  0|  ..........title........... |   
-        #   |                             |
-        # --| --------------------------- |
-        #   |        |          |         |
-        #  1| y_axis |   view   |  c_bar  |
-        #   |        |          |         |
-        # --| ------ | -------- | ------- |
-        #   |        |          |         |
-        #  2| (none) |  x_axis  |  (none) |
-        #   |        |          |         |
-        # --| ------ | -------- | ------- |
+        # __|  - 0 -  |  - 1 -  |  - 2 -  |  - 3 -  |
+        #   |                                       |
+        #  0|  ...............title................ |   
+        #   |                                       |
+        # --| ------------------------------------- |
+        #   |        |          |         |         |
+        #  1| y_axis |   view   |  c_bar  |  units  |
+        #   |        |          |         |         |
+        # --| ------ | -------- | ------- | ------- |
+        #   |        |          |         |         |
+        #  2| (none) |  x_axis  |  (none) |  (none) |
+        #   |        |          |         |         |
+        # --| ------ | -------- | ------- | ------- |
         #
         # VisPy's documentation is horrid, there are just a handful of examples
         # and an API spec from which you have to derive everything. It's super
@@ -102,7 +103,7 @@ class SlicePlot(QObject):
             color='white')
         self.title.margin = 10.0
         self.title.height_max = 40.0
-        self.grid.add_widget(self.title, row=0, col=0, col_span=3)
+        self.grid.add_widget(self.title, row=0, col=0, col_span=4)
 
         # Cell (1,0) - Y-Axis
         self.y_axis = AxisWidget(
@@ -122,7 +123,6 @@ class SlicePlot(QObject):
 
         # Cell (1,2) - Color Bar
         self.color_bar = ColorBarWidget(
-            label=self.cmaps.get_units_for_product(self.product_to_display),
             clim=self.clim,
             cmap=self.cmap,
             orientation="right",
@@ -134,6 +134,11 @@ class SlicePlot(QObject):
             tick.font_size = 6
         self.color_bar.width_max = 120
         self.grid.add_widget(self.color_bar, row=1, col=2)
+
+        # Cell (1,3) - Color Bar
+        self.unit_label = Label("Units", rotation = -90, color='white')
+        self.unit_label.width_max = 30.0
+        self.grid.add_widget(self.unit_label, row=1, col=3)
 
         # Cell (2,1) - X-Axis
         self.x_axis = AxisWidget(
@@ -173,7 +178,8 @@ class SlicePlot(QObject):
         # Update color bar
         self.color_bar.cmap = self.cmap
         self.color_bar.clim = self.clim
-        self.color_bar.label = self.cmaps.get_units_for_product(self.product_to_display)
+        # FIXME: Unit label won't be changed again until the product to display is switched.
+        self.unit_label.text = self.cmaps.get_units_for_product(self.product_to_display)
 
         # Image color setup (depends on displayed product)
         self.image.cmap = self.cmap
